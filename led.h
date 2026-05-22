@@ -24,19 +24,20 @@
 #include "Arduino.h"
 
 /* 引脚定义 */
-#define LED_PIN       1   /* 开发板上LED连接到GPIO1引脚 */
-#define LED_PIN2      8   /* 开发板上LED连接到GPIO8引脚 */
 
+#define LED_PIN      8   /* 开发板上LED连接到GPIO8引脚 */
+#define FAN_PIN      3   /* 开发板上风机连接到GPIO3引脚 */
 
 /* 宏函数定义 */
 #define LED(x)        digitalWrite(LED_PIN, x)
 #define LED_TOGGLE()  digitalWrite(LED_PIN, !digitalRead(LED_PIN))
 
-#define LED2(x)       digitalWrite(LED_PIN2, x)
-#define LED2_TOGGLE()  digitalWrite(LED_PIN2, !digitalRead(LED_PIN2))
+#define FAN(x)       digitalWrite(FAN_PIN, x)
+#define FAN_TOGGLE()  digitalWrite(FAN_PIN, !digitalRead(FAN_PIN))
 
 
 /* 函数声明 */
 void led_init(void);      /* led引脚初始化函数 */
+void fan_init(void);      /* fan引脚初始化函数 */
 
 #endif

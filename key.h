@@ -22,24 +22,38 @@
 #include "Arduino.h"
 
 /* 引脚定义 */
-#define KEY_PIN       0   /* 按键连接到GPIO0引脚 */
+#define KEY_PIN1       21   /* KEY1: 自锁开关，连接到 GPIO21（总开关） */
+#define KEY_PIN2       20   /* KEY2: 自复位按键，连接到 GPIO20（短按/长按） */
+
+/* 按键类型定义 */
+#define KEY_TYPE_LOCK      1    /* 自锁按键（两态保持） */
+#define KEY_TYPE_MOMENTARY 2    /* 自复位按键（按下导通） */
 
 /* 去抖动配置 */
-#define KEY_DEBOUNCE_TIME    20   /* 按键去抖动时间(ms) */
-#define KEY_LONG_PRESS_TIME  1000 /* 长按时间阈值(ms) */
+#define KEY_DEBOUNCE_TIME    10   /* 按键去抖动时间 (ms) */
+#define KEY_LONG_PRESS_TIME  2000 /* 长按时间阈值 (ms) */
 
 /* 按键事件类型 */
 #define KEY_EVENT_NONE       0    /* 无事件 */
-#define KEY_EVENT_PRESS      1    /* 按下事件 */
-#define KEY_EVENT_RELEASE    2    /* 释放事件 */
-#define KEY_EVENT_LONG_PRESS 3    /* 长按事件 */
+#define KEY_EVENT_SHORT_PRESS 1   /* 短按事件 */
+#define KEY_EVENT_LONG_PRESS  2   /* 长按事件 */
+
+/* 按键状态 */
+#define KEY_STATE_OFF        0    /* 自锁开关 OFF（断开） */
+#define KEY_STATE_ON         1    /* 自锁开关 ON（闭合） */
 
 /* 宏函数定义 */
-#define KEY_READ()    digitalRead(KEY_PIN)
+#define KEY1_READ()    digitalRead(KEY_PIN1)
+#define KEY2_READ()    digitalRead(KEY_PIN2)
 
 /* 函数声明 */
-void key_init(void);              /* 按键引脚初始化函数 */
-uint8_t key_scan(void);           /* 按键扫描函数，返回按键状态(0/1) */
-uint8_t key_scan_event(void);     /* 按键事件扫描函数，返回事件类型 */
+void key1_init(void);              /* KEY1 初始化 */
+uint8_t key1_get_state(void);      /* KEY1 状态查询 */
+bool key1_is_on(void);             /* KEY1 是否 ON */
+
+void key2_init(void);              /* KEY2 初始化 */
+void key2_isr_handler(void);       /* KEY2 中断处理函数 */
+uint8_t key2_get_event(void);      /* 获取 KEY2 事件（非阻塞） */
+bool key2_is_pressed(void);        /* KEY2 是否按下 */
 
 #endif

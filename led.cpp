@@ -29,9 +29,16 @@ void led_init(void)
 {
     pinMode(LED_PIN, OUTPUT);     /* 设置led引脚为输出模式 */
     digitalWrite(LED_PIN, HIGH);  /* 结合原理图设计,实物LED获得高电平会熄灭 */
-    
-    pinMode(LED_PIN2, OUTPUT);    /* 设置led2引脚为输出模式 */
-    digitalWrite(LED_PIN2, HIGH); /* LED2初始状态为熄灭 */
 }
 
 
+/**
+* @brief       初始化风机相关IO口
+* @param       无
+* @retval      无
+*/
+void fan_init(void) 
+{
+    pinMode(FAN_PIN, OUTPUT);     /* 设置fan引脚为输出模式 */
+    digitalWrite(FAN_PIN, HIGH);  /* 结合原理图设计,实物风机获得高电平会关闭 */
+}

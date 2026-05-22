@@ -23,6 +23,8 @@
 /* 版本信息定义 */
 #define VERSION      "1.0.0" // 版本字符串
 
+#define DEVICE_ID      "PCT_100_888" // 设备ID
+
 /* 项目信息 */
 #define PROJECT_NAME        "ele_control"
 #define PROJECT_AUTHOR      "md"

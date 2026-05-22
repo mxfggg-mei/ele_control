@@ -2,108 +2,204 @@
  ****************************************************************************************************
  * @file        key.cpp
  * @author      md
- * @version     V1.0
+ * @version     V3.0
  * @date        2025-12-01
- * @brief       按键驱动代码
+ * @brief       按键驱动代码 - KEY1 轮询 + KEY2 中断
  * @license     Copyright (c) 
  ****************************************************************************************************
  * @attention
  *
  * 修改说明
- * V1.0 20251201
- * 第一次发布
+ * V3.0 20251201 - KEY1 轮询 + KEY2 中断模式
+ * V2.0 20251201 - 支持自锁和自恢复按键
+ * V1.0 20251201 - 第一次发布
  *
  ****************************************************************************************************
  */
 
 #include "key.h"
 
+/* ==================== KEY1: 自锁开关（总开关） ==================== */
+/* 硬件自锁，直接读取物理状态即可 */
+static uint8_t key1_state = KEY_STATE_OFF;  // KEY1 状态
+static unsigned long key1_lastDebounceTime = 0;
+static uint8_t key1_lastReading = HIGH;
+
+/* ==================== KEY2: 自复位按键（中断模式） ==================== */
+static unsigned long key2_pressStartTime = 0;
+static bool key2_longPressTriggered = false;
+static bool key2_pressed = false;  // 当前是否按下
+
 /**
-* @brief       初始化按键相关IO口
-* @param       无
-* @retval      无
-*/
-void key_init(void) 
+ * @brief       KEY1 初始化（自锁总开关）
+ * @param       无
+ * @retval      无
+ * @note        KEY1 是硬件自锁开关，保持两种状态
+ */
+void key1_init(void)
 {
-    pinMode(KEY_PIN, INPUT_PULLUP);     /* 设置按键引脚为输入模式，启用内部上拉电阻 */
+    pinMode(KEY_PIN1, INPUT_PULLUP);
+    key1_state = KEY_STATE_OFF;
+    key1_lastReading = HIGH;
 }
 
 /**
-* @brief       按键扫描函数（带去抖动）
-* @param       无
-* @retval      0: 按键未按下, 1: 按键按下
-* @note        使用状态机实现去抖动，避免机械按键抖动导致误触
-*/
-uint8_t key_scan(void) 
+ * @brief       KEY1 状态查询
+ * @param       无
+ * @retval      KEY_STATE_ON 或 KEY_STATE_OFF
+ */
+uint8_t key1_get_state(void)
 {
-    static unsigned long lastDebounceTime = 0;
-    static uint8_t lastKeyState = HIGH;
-    static uint8_t keyState = HIGH;
-    uint8_t reading;
+    uint8_t reading = KEY1_READ();
     
-    reading = KEY_READ();
-    
-    if (reading != lastKeyState) {
-        lastDebounceTime = millis();
-        lastKeyState = reading;
+    // 去抖动
+    if (reading != key1_lastReading) {
+        key1_lastDebounceTime = millis();
+        key1_lastReading = reading;
     }
     
-    if ((millis() - lastDebounceTime) > KEY_DEBOUNCE_TIME) {
-        if (reading != keyState) {
-            keyState = reading;
-        }
+    if ((millis() - key1_lastDebounceTime) > KEY_DEBOUNCE_TIME) {
+        // 更新状态：低电平=ON，高电平=OFF
+        key1_state = (reading == LOW) ? KEY_STATE_ON : KEY_STATE_OFF;
     }
     
-    return (keyState == LOW) ? 1 : 0;
+    return key1_state;
 }
 
 /**
-* @brief       按键事件扫描函数（带去抖动和事件检测）
-* @param       无
-* @retval      按键事件类型(KEY_EVENT_NONE/PRESS/RELEASE/LONG_PRESS)
-* @note        检测按键按下、释放和长按事件
-*/
-uint8_t key_scan_event(void) 
+ * @brief       检查 KEY1 是否处于 ON 状态
+ * @param       无
+ * @retval      true: ON（允许继电器输出）
+ *              false: OFF（强制断开继电器）
+ */
+bool key1_is_on(void)
 {
-    static unsigned long lastDebounceTime = 0;
-    static unsigned long pressStartTime = 0;
-    static uint8_t lastKeyState = HIGH;
-    static uint8_t keyState = HIGH;
-    static bool longPressTriggered = false;
-    uint8_t reading;
+    return (key1_get_state() == KEY_STATE_ON);
+}
+
+/**
+ * @brief       KEY2 初始化（自复位按键，中断模式）
+ * @param       无
+ * @retval      无
+ */
+void key2_init(void)
+{
+    // 配置引脚为输入上拉
+    pinMode(KEY_PIN2, INPUT_PULLUP);
+    
+    // 附加中断：下降沿触发（按键按下）
+    attachInterrupt(digitalPinToInterrupt(KEY_PIN2), key2_isr_handler, FALLING);
+    
+    // 初始化变量
+    key2_pressStartTime = 0;
+    key2_longPressTriggered = false;
+    key2_pressed = false;
+}
+
+/**
+ * @brief       KEY2 中断处理函数（ISR）
+ * @param       无
+ * @retval      无
+ * @note        当按键按下时触发（下降沿）
+ */
+void key2_isr_handler(void)
+{
+    static unsigned long lastInterruptTime = 0;
+    unsigned long currentTime = millis();
+    
+    // 去抖：忽略 KEY_DEBOUNCE_TIME 内的重复中断
+    if (currentTime - lastInterruptTime < KEY_DEBOUNCE_TIME) {
+        return;
+    }
+    
+    // 重要：验证按键是否真的按下（GPIO 应该是 LOW）
+    if (digitalRead(KEY_PIN2) != LOW) {
+        // 不是真正的按下，可能是干扰
+        return;
+    }
+    
+    lastInterruptTime = currentTime;
+    
+    // 记录按下时间
+    key2_pressStartTime = currentTime;
+    key2_pressed = true;
+}
+
+/**
+ * @brief       检查 KEY2 是否按下
+ * @param       无
+ * @retval      true: 按下，false: 未按下
+ */
+bool key2_is_pressed(void)
+{
+    return key2_pressed;
+}
+
+/**
+ * @brief       获取 KEY2 事件（非阻塞，增强防误触发）
+ * @param       无
+ * @retval      KEY_EVENT_SHORT_PRESS: 短按（<1s）
+ *              KEY_EVENT_LONG_PRESS: 长按（≥1s）
+ *              KEY_EVENT_NONE: 无事件
+ * @note        在 loop() 中调用，检测按键释放后的事件
+ */
+uint8_t key2_get_event(void)
+{
     uint8_t event = KEY_EVENT_NONE;
     
-    reading = KEY_READ();
-    
-    /* 状态变化检测，重置去抖动定时器 */
-    if (reading != lastKeyState) {
-        lastDebounceTime = millis();
-        lastKeyState = reading;
-    }
-    
-    /* 去抖动处理 */
-    if ((millis() - lastDebounceTime) > KEY_DEBOUNCE_TIME) {
-        if (reading != keyState) {
-            keyState = reading;
+    // 检查是否按下
+    if (key2_pressed) {
+        unsigned long pressDuration = millis() - key2_pressStartTime;
+        
+        // 检查是否释放（读取当前引脚状态）
+        uint8_t currentReading = digitalRead(KEY_PIN2);
+        
+        if (currentReading == HIGH) {
+            // 按键已释放
             
-            if (keyState == LOW) {
-                /* 按键按下 */
-                pressStartTime = millis();
-                longPressTriggered = false;
-                event = KEY_EVENT_PRESS;
-            } else {
-                /* 按键释放 */
-                event = KEY_EVENT_RELEASE;
-                longPressTriggered = false;  /* 重置长按标志 */
+            // 验证：按下时间必须大于去抖时间，防止误触发
+            if (pressDuration < KEY_DEBOUNCE_TIME) {
+                Serial.print("[KEY2] 异常：按下时间过短 (");
+                Serial.print(pressDuration);
+                Serial.println("ms)，忽略");
+                key2_pressed = false;
+                return KEY_EVENT_NONE;
             }
-        }
-    }
-    
-    /* 长按检测 */
-    if (keyState == LOW && !longPressTriggered) {
-        if ((millis() - pressStartTime) > KEY_LONG_PRESS_TIME) {
-            longPressTriggered = true;
-            event = KEY_EVENT_LONG_PRESS;
+            
+            key2_pressed = false;
+            
+            // 防止异常值
+            if (pressDuration > 10000) {
+                pressDuration = 0;
+            }
+            
+            Serial.print("[KEY2] 按下时长：");
+            Serial.print(pressDuration);
+            Serial.print(" ms (阈值：");
+            Serial.print(KEY_DEBOUNCE_TIME);
+            Serial.print("-");
+            Serial.print(KEY_LONG_PRESS_TIME);
+            Serial.println("ms)");
+            
+            // 判断事件类型
+            if (pressDuration >= KEY_LONG_PRESS_TIME) {
+                // 长按释放
+                Serial.println("[KEY2] 长按已触发，释放时不产生事件");
+                event = KEY_EVENT_NONE;
+            } else {
+                // 短按
+                event = KEY_EVENT_SHORT_PRESS;
+                Serial.println("[KEY2] >> 短按事件触发");
+            }
+            
+            key2_longPressTriggered = false;
+        } else {
+            // 按键仍按住，检查长按
+            if (!key2_longPressTriggered && pressDuration >= KEY_LONG_PRESS_TIME) {
+                key2_longPressTriggered = true;
+                event = KEY_EVENT_LONG_PRESS;
+                Serial.println("[KEY2] >> 长按事件触发");
+            }
         }
     }
     
