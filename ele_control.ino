@@ -69,6 +69,25 @@ unsigned long lastReconnectMillis = 0;
 /* 自动/手动模式变量 */
 bool g_autoMode = true;  // 默认自动模式，由 KEY2 长按切换
 
+/* 继电器状态循环控制变量 */
+uint8_t g_relayState = 0;  // 0:00  1:01  2:10  3:11
+
+/* 继电器状态映射表 [bit0=LED, bit1=FAN] */
+const uint8_t RELAY_STATE_TABLE[4] = {
+    0b00,  // 状态0: LED=OFF, FAN=OFF
+    0b01,  // 状态1: LED=ON,  FAN=OFF
+    0b10,  // 状态2: LED=OFF, FAN=ON
+    0b11   // 状态3: LED=ON,  FAN=ON
+};
+
+/* 继电器状态名称表 */
+const char* RELAY_STATE_NAME[4] = {
+    "00 - LED:OFF  FAN:OFF",
+    "01 - LED:ON   FAN:OFF",
+    "10 - LED:OFF  FAN:ON",
+    "11 - LED:ON   FAN:ON"
+};
+
 /* ==================== 传感器阈值设置 ==================== */
 float lightThreshold = 1000.0;  // 光照阈值（ADC值），超过此值打开LED
 float tempThreshold = 28.0;     // 温度阈值（℃），超过此值打开风扇
@@ -200,7 +219,7 @@ void handleWiFiConnected(void) {
  * @brief    更新 LED 状态（灯光控制）
  * @param    无
  * @retval   无
- * @note     LED 引脚（GPIO7）控制继电器，RGB 灯（GPIO0）作为指示灯
+ * @note     LED 引脚（GPIO6）控制继电器，RGB 灯（GPIO0）作为指示灯
  */
 void updateLedState(void) {
     // RGB 灯始终与 LED 同步
@@ -211,13 +230,13 @@ void updateLedState(void) {
     }
     
     // 控制实际继电器（仅在 KEY1 ON 时有效）
-    if (key1_is_on()) {
-        LED(lightEnabled ? LOW : HIGH);
-        FAN(fanEnabled ? LOW : HIGH);
+    if (key1_get_state()) {
+        LED(lightEnabled ? HIGH : LOW);
+        FAN(fanEnabled ? HIGH : LOW);
     } else {
         // KEY1 OFF，强制关闭继电器
-        LED(HIGH);
-        FAN(HIGH);
+        LED(LOW);
+        FAN(LOW);
     }
 }
 
@@ -442,19 +461,20 @@ void handleKeyEvent(void) {
     if (key2Event != KEY_EVENT_NONE) {
         switch (key2Event) {
             case KEY_EVENT_SHORT_PRESS:
-                // 短按：仅在手动模式下有效，同时切换灯光和风机
+                // 短按：仅在手动模式下有效，循环切换继电器状态 00->01->10->11->00
                 if (!g_autoMode) {
                     if (key1On) {
-                        lightEnabled = !lightEnabled;
-                        fanEnabled = !fanEnabled;
+                        g_relayState = (g_relayState + 1) % 4;
                         
-                        Serial.print("[Key2] 短按 - 灯光：");
-                        Serial.println(lightEnabled ? "ON" : "OFF");
-                        Serial.print("[Key2] 短按 - 风机：");
-                        Serial.println(fanEnabled ? "ON" : "OFF");
+                        uint8_t stateBits = RELAY_STATE_TABLE[g_relayState];
+                        lightEnabled = (stateBits & 0b01) != 0;
+                        fanEnabled = (stateBits & 0b10) != 0;
                         
-                        setOledForceUpdate();  // 强制更新 OLED
-                        mqtt_request_publish();  // 立即上报状态
+                        Serial.print("[Key2] 状态 ");
+                        Serial.println(RELAY_STATE_NAME[g_relayState]);
+                        
+                        setOledForceUpdate();
+                        mqtt_request_publish();
                     } else {
                         Serial.println("[Key2] 短按无效 - 总闸已关闭");
                     }
@@ -464,21 +484,25 @@ void handleKeyEvent(void) {
                 break;
                 
             case KEY_EVENT_LONG_PRESS:
-                // 长按：切换自动/手动模式（不受总闸控制）
-                g_autoMode = !g_autoMode;
-                
-                if (g_autoMode) {
-                    // 切换到自动模式
-                    wifiState = WIFI_IDLE;
-                    startWiFiConnection();
-                    Serial.println("[Key2] 长按 - 切换到自动模式");
+                // 长按：切换自动/手动模式（仅在总闸开启时有效）
+                if (key1On) {
+                    g_autoMode = !g_autoMode;
+                    
+                    if (g_autoMode) {
+                        // 切换到自动模式
+                        wifiState = WIFI_IDLE;
+                        startWiFiConnection();
+                        Serial.println("[Key2] 长按 - 切换到自动模式");
+                    } else {
+                        // 切换到手动模式
+                        wifiState = WIFI_DISCONNECTED;
+                        WiFi.disconnect();
+                        Serial.println("[Key2] 长按 - 切换到手动模式");
+                    }
+                    mqtt_request_publish();  // 立即上报状态
                 } else {
-                    // 切换到手动模式
-                    wifiState = WIFI_DISCONNECTED;
-                    WiFi.disconnect();
-                    Serial.println("[Key2] 长按 - 切换到手动模式");
+                    Serial.println("[Key2] 长按无效 - 总闸已关闭");
                 }
-                mqtt_request_publish();  // 立即上报状态
                 break;
                 
             default:

@@ -25,8 +25,8 @@
 
 /* 引脚定义 */
 
-#define LED_PIN      8   /* 开发板上LED连接到GPIO8引脚 */
-#define FAN_PIN      3   /* 开发板上风机连接到GPIO3引脚 */
+#define LED_PIN      6   /* 开发板上LED连接到GPIO6引脚 */
+#define FAN_PIN      7   /* 开发板上风机连接到GPIO7引脚 */
 
 /* 宏函数定义 */
 #define LED(x)        digitalWrite(LED_PIN, x)

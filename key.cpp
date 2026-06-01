@@ -23,7 +23,7 @@
 /* 硬件自锁，直接读取物理状态即可 */
 static uint8_t key1_state = KEY_STATE_OFF;  // KEY1 状态
 static unsigned long key1_lastDebounceTime = 0;
-static uint8_t key1_lastReading = HIGH;
+static uint8_t key1_lastReading = LOW;
 
 /* ==================== KEY2: 自复位按键（中断模式） ==================== */
 static unsigned long key2_pressStartTime = 0;
@@ -38,9 +38,12 @@ static bool key2_pressed = false;  // 当前是否按下
  */
 void key1_init(void)
 {
-    pinMode(KEY_PIN1, INPUT_PULLUP);
-    key1_state = KEY_STATE_OFF;
-    key1_lastReading = HIGH;
+    pinMode(KEY_PIN1, INPUT_PULLDOWN);
+    
+    // 读取初始状态
+    key1_lastReading = KEY1_READ();
+    key1_state = (key1_lastReading == HIGH) ? KEY_STATE_ON : KEY_STATE_OFF;
+    key1_lastDebounceTime = millis();
 }
 
 /**
@@ -52,15 +55,17 @@ uint8_t key1_get_state(void)
 {
     uint8_t reading = KEY1_READ();
     
-    // 去抖动
+    // 检测电平变化
     if (reading != key1_lastReading) {
+        // 电平变化，重置计时器
         key1_lastDebounceTime = millis();
         key1_lastReading = reading;
     }
     
+    // 等待稳定时间后更新状态
     if ((millis() - key1_lastDebounceTime) > KEY_DEBOUNCE_TIME) {
-        // 更新状态：低电平=ON，高电平=OFF
-        key1_state = (reading == LOW) ? KEY_STATE_ON : KEY_STATE_OFF;
+        // 电平稳定，更新状态
+        key1_state = (reading == HIGH) ? KEY_STATE_ON : KEY_STATE_OFF;
     }
     
     return key1_state;
@@ -84,11 +89,11 @@ bool key1_is_on(void)
  */
 void key2_init(void)
 {
-    // 配置引脚为输入上拉
-    pinMode(KEY_PIN2, INPUT_PULLUP);
+    // 配置引脚为输入下拉
+    pinMode(KEY_PIN2, INPUT_PULLDOWN);
     
-    // 附加中断：下降沿触发（按键按下）
-    attachInterrupt(digitalPinToInterrupt(KEY_PIN2), key2_isr_handler, FALLING);
+    // 附加中断：上升沿触发（按键按下）
+    attachInterrupt(digitalPinToInterrupt(KEY_PIN2), key2_isr_handler, RISING);//
     
     // 初始化变量
     key2_pressStartTime = 0;
@@ -100,7 +105,7 @@ void key2_init(void)
  * @brief       KEY2 中断处理函数（ISR）
  * @param       无
  * @retval      无
- * @note        当按键按下时触发（下降沿）
+ * @note        当按键按下时触发（上升沿）
  */
 void key2_isr_handler(void)
 {
@@ -112,8 +117,8 @@ void key2_isr_handler(void)
         return;
     }
     
-    // 重要：验证按键是否真的按下（GPIO 应该是 LOW）
-    if (digitalRead(KEY_PIN2) != LOW) {
+    // 重要：验证按键是否真的按下（GPIO 应该是 HIGH）
+    if (digitalRead(KEY_PIN2) != HIGH) {
         // 不是真正的按下，可能是干扰
         return;
     }
@@ -154,7 +159,7 @@ uint8_t key2_get_event(void)
         // 检查是否释放（读取当前引脚状态）
         uint8_t currentReading = digitalRead(KEY_PIN2);
         
-        if (currentReading == HIGH) {
+        if (currentReading == LOW) {
             // 按键已释放
             
             // 验证：按下时间必须大于去抖时间，防止误触发

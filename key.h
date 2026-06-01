@@ -22,15 +22,15 @@
 #include "Arduino.h"
 
 /* 引脚定义 */
-#define KEY_PIN1       21   /* KEY1: 自锁开关，连接到 GPIO21（总开关） */
-#define KEY_PIN2       20   /* KEY2: 自复位按键，连接到 GPIO20（短按/长按） */
+#define KEY_PIN1       20   /* KEY1: 自锁开关，连接到 GPIO20（总开关，下拉电阻，高电平=ON） */
+#define KEY_PIN2       21   /* KEY2: 自复位按键，连接到 GPIO21（短按/长按，下拉电阻，高电平=按下） */
 
 /* 按键类型定义 */
 #define KEY_TYPE_LOCK      1    /* 自锁按键（两态保持） */
 #define KEY_TYPE_MOMENTARY 2    /* 自复位按键（按下导通） */
 
 /* 去抖动配置 */
-#define KEY_DEBOUNCE_TIME    10   /* 按键去抖动时间 (ms) */
+#define KEY_DEBOUNCE_TIME    50   /* 按键去抖动时间 (ms) */
 #define KEY_LONG_PRESS_TIME  2000 /* 长按时间阈值 (ms) */
 
 /* 按键事件类型 */
