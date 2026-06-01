@@ -41,7 +41,7 @@ void rgb_init(void)
     
     // 启动测试：快速闪烁白色（减少延时）
     rgb_set_color(RGB_WHITE);
-    delay(100);
+    //delay(100);
     rgb_off();
 }
 
@@ -164,7 +164,7 @@ void rgb_breath(uint32_t color, uint8_t brightness)
                                               g * i / brightness, 
                                               b * i / brightness));
         pixels.show();
-        delay(10);
+        //delay(10);
     }
     
     // 渐变：灭
@@ -173,6 +173,6 @@ void rgb_breath(uint32_t color, uint8_t brightness)
                                               g * i / brightness, 
                                               b * i / brightness));
         pixels.show();
-        delay(10);
+        //delay(10);
     }
 }

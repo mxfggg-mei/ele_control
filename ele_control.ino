@@ -89,7 +89,7 @@ const char* RELAY_STATE_NAME[4] = {
 };
 
 /* ==================== 传感器阈值设置 ==================== */
-float lightThreshold = 1000.0;  // 光照阈值（ADC值），超过此值打开LED
+float lightThreshold = 300.0;   // 光照阈值（lux），超过此值打开LED
 float tempThreshold = 28.0;     // 温度阈值（℃），超过此值打开风扇
 
 /* ==================== 按键相关变量 ==================== */
@@ -108,7 +108,7 @@ unsigned long lastAdcReadMillis = 0;
 const unsigned long ADC_READ_INTERVAL = 200;  // ADC 读取间隔 (ms)
 
 /* 模拟传感器数据 */
-float lightValue = 1234.0;
+float lightValue = 0.0;         // 光照值（lux，由 GL5516 读取）
 float temperature = 25.5;        // 温度值（由 DS18B20 读取）
 bool lightEnabled = false;
 bool fanEnabled = false;
@@ -220,6 +220,7 @@ void handleWiFiConnected(void) {
  * @param    无
  * @retval   无
  * @note     LED 引脚（GPIO6）控制继电器，RGB 灯（GPIO0）作为指示灯
+ * @note     继电器电平定义：HIGH=ON(吸合), LOW=OFF(断开)
  */
 void updateLedState(void) {
     // RGB 灯始终与 LED 同步
@@ -230,7 +231,7 @@ void updateLedState(void) {
     }
     
     // 控制实际继电器（仅在 KEY1 ON 时有效）
-    if (key1_get_state()) {
+    if (key1_is_on()) {
         LED(lightEnabled ? HIGH : LOW);
         FAN(fanEnabled ? HIGH : LOW);
     } else {
@@ -270,7 +271,7 @@ void setup() {
     rgb_init();   // RGB 灯初始化
     Serial.begin(SERIAL_BAUD_RATE);
     
-    delay(100);
+    //delay(100);
     
     // 打印版本信息
     Serial.println("\n========================================");
@@ -304,11 +305,11 @@ void setup() {
     // RGB 灯测试：快速彩虹色循环（减少阻塞时间）
     Serial.println("[RGB] 测试 RGB 灯...");
     rgb_set_color(RGB_RED);
-    delay(100);
+    //delay(100);
     rgb_set_color(RGB_GREEN);
-    delay(100);
+    //delay(100);
     rgb_set_color(RGB_BLUE);
-    delay(100);
+    //delay(100);
     rgb_off();
     
 
@@ -353,7 +354,7 @@ void loop() {
     if (wifiState == WIFI_CONNECTED) {
         if (currentMillis - lastHeartbeatMillis >= HEARTBEAT_INTERVAL) {
             lastHeartbeatMillis = currentMillis;
-            Serial.printf("[Heartbeat] TEMP: %.1f℃  |  LIGHT: %d\n", temperature, (int)lightValue);
+            Serial.printf("[Heartbeat] TEMP: %.1f℃  |  LIGHT: %.1f lux\n", temperature, lightValue);
         }
     }
     
@@ -366,17 +367,17 @@ void loop() {
         }
     }
     
-    /* 读取光照强度（ADC 值，每隔 200ms 读取一次） */
+    /* 读取光照强度（lux，每隔 200ms 读取一次） */
     if (currentMillis - lastAdcReadMillis >= ADC_READ_INTERVAL) {
         lastAdcReadMillis = currentMillis;
-        lightValue = (float)adc_read_raw();
+        lightValue = adc_read_lux();
     }
     
     /* 自动模式下的传感器控制 */
     if (g_autoMode) {
         // 自动模式：根据传感器值自动控制
-        // LIGHT > 阈值 → 打开 LED
-        bool newLightState = (lightValue > lightThreshold);
+        // LIGHT < 阈值 → 打开 LED（光照低时开灯）
+        bool newLightState = (lightValue < lightThreshold);
         // TEMP > 阈值 → 打开 FAN
         bool newFanState = (temperature > tempThreshold);
         
@@ -385,10 +386,10 @@ void loop() {
             fanEnabled = newFanState;
             
             Serial.print("[Auto] 自动控制 - 光照: ");
-            Serial.print((int)lightValue);
+            Serial.print(lightValue, 1);
             Serial.print("/");
-            Serial.print((int)lightThreshold);
-            Serial.print(" → LED: ");
+            Serial.print(lightThreshold, 1);
+            Serial.print(" lux (低亮开灯) → LED: ");
             Serial.println(lightEnabled ? "ON" : "OFF");
             
             Serial.print("[Auto] 自动控制 - 温度: ");
@@ -399,6 +400,7 @@ void loop() {
             Serial.println(fanEnabled ? "ON" : "OFF");
             
             setOledForceUpdate();  // 强制更新 OLED
+            mqtt_request_publish();  // 立即上报状态
         }
     }
     
@@ -430,16 +432,16 @@ void handleKeyEvent(void) {
         
         if (key1On) {
             Serial.println("[Key1] 总开关 ON - 允许继电器输出");
-            // 恢复之前的状态
-            LED(lightEnabled ? LOW : HIGH);
-            FAN(fanEnabled ? LOW : HIGH);
+            // 强制关闭所有继电器，等待updateLedState恢复正确状态
+            LED(LOW);
+            FAN(LOW);
         } else {
             Serial.println("[Key1] 总开关 OFF - 强制断开继电器");
             // 强制关闭所有继电器
             lightEnabled = false;
             fanEnabled = false;
-            LED(HIGH);  // HIGH=灭
-            FAN(HIGH);  // HIGH=停
+            LED(LOW);
+            FAN(LOW);
         }
         setOledForceUpdate();  // 立即更新 OLED
         mqtt_request_publish();  // 立即上报状态
@@ -557,8 +559,8 @@ void updateOledDisplay(void) {
     
     //u8g2.setFont(u8g2_font_ncenB08_tr);
     u8g2.setCursor(4, 26);
-    snprintf(buffer, sizeof(buffer), "LIGHT:%d/%d", 
-             (int)lightValue, (int)lightThreshold);
+    snprintf(buffer, sizeof(buffer), "LIGHT:%.0f/%.0f", 
+             lightValue, lightThreshold);
     u8g2.print(buffer);
     
     u8g2.setCursor(4, 40);

@@ -26,5 +26,6 @@
 void adc_init(void);
 uint16_t adc_read_raw(void);
 float adc_read_voltage(void);
+float adc_read_lux(void);
 
 #endif /* __ADC_H */

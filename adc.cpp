@@ -59,3 +59,20 @@ float adc_read_voltage(void)
     
     return voltage;
 }
+
+/**
+ * @brief       读取光照强度（lux）
+ * @param       无
+ * @retval      光照强度（单位：lux）
+ * @note        GL5516+10KQ分压电路，反相ADC平方公式
+ *              反相ADC = 4095 - rawADC
+ *              lux ≈ (反相ADC)² / 30000
+ */
+float adc_read_lux(void)
+{
+    uint16_t rawADC = adc_read_raw();
+    uint16_t invertedADC = 4095 - rawADC;
+    float lux = (float)(invertedADC * invertedADC) / 30000.0f;
+    
+    return lux;
+}

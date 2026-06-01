@@ -21,7 +21,7 @@
 #define __VERSION_H
 
 /* 版本信息定义 */
-#define VERSION      "1.2" // 版本字符串
+#define VERSION      "1.3" // 版本字符串
 
 #define DEVICE_ID      "PCT_100_888" // 设备ID
 

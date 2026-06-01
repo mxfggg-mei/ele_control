@@ -25,6 +25,8 @@ static char mqttTopicCommand[64];
 /* 连接状态 */
 static bool mqttConnected = false;
 static bool mqttNeedPublish = false;  /* 需要立即上报状态标志（按键变化时设置） */
+static bool mqttRecentlyPublished = false;  /* 最近主动上报标志（避免重复应答get_status） */
+static unsigned long mqttLastPublishTime = 0;  /* 上次上报时间 */
 
 /**
  * @brief       MQTT 连接回调函数
@@ -132,7 +134,13 @@ void mqtt_on_message(char* topic, byte* payload, unsigned int length) {
         
     } else if (strcmp(cmd, MQTT_CMD_GET_STATUS) == 0) {
         Serial.println("[MQTT] 命令: get_status");
-        mqtt_publish_status();  // 立即上报状态
+        // 检查最近是否主动上报过（5秒内）
+        unsigned long currentMillis = millis();
+        if (mqttRecentlyPublished && (currentMillis - mqttLastPublishTime < 5000)) {
+            Serial.println("[MQTT] 最近已主动上报，跳过应答");
+        } else {
+            mqtt_publish_status();  // 立即上报状态
+        }
         
     } else if (strcmp(cmd, MQTT_CMD_SET_THRESHOLD) == 0) {
         float temp = doc["temp"];
@@ -267,9 +275,6 @@ void mqtt_publish_status(void) {
     doc["mode"] = g_autoMode ? "auto" : "manual";
     doc["key1_lock"] = key1_is_on();
     doc["relay3"] = lightEnabled;
-    doc["relay4"] = fanEnabled;
-    doc["temp_threshold"] = tempThreshold;
-    doc["light_threshold"] = lightThreshold;
     
     // 序列化 JSON
     char payload[256];
@@ -279,11 +284,13 @@ void mqtt_publish_status(void) {
     if (mqttClient.publish(mqttTopicStatus, payload)) {
         Serial.print("[MQTT] 发布状态: ");
         Serial.println(payload);
+        // 记录上报时间和标志
+        mqttLastPublishTime = millis();
+        mqttRecentlyPublished = true;
     } else {
         Serial.println("[MQTT] 发布失败");
     }
 }
-
 /**
  * @brief       设置阈值
  * @param       temp: 温度阈值

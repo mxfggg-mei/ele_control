@@ -30,7 +30,7 @@
 #define KEY_TYPE_MOMENTARY 2    /* 自复位按键（按下导通） */
 
 /* 去抖动配置 */
-#define KEY_DEBOUNCE_TIME    50   /* 按键去抖动时间 (ms) */
+#define KEY_DEBOUNCE_TIME    20   /* 按键去抖动时间 (ms) */
 #define KEY_LONG_PRESS_TIME  2000 /* 长按时间阈值 (ms) */
 
 /* 按键事件类型 */
