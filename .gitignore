@@ -1,0 +1,7 @@
+*.mpy
+*.exe
+*.zip
+bak
+mpy
+mpy+crc32
+__pycache__
