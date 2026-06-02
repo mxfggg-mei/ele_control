@@ -139,16 +139,22 @@ void handleWiFiEvent(WiFiEvent_t event) {
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             DEBUG_PRINTLN("[WiFi] 连接断开");
             wifiState = WIFI_DISCONNECTED;
-            lastBlinkMillis = millis(); // 重置闪烁定时器
+            lastBlinkMillis = millis();
+            rgb_set_mode(RGB_MODE_BREATH);
+            rgb_set_color(RGB_RED);
             break;
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
             DEBUG_PRINTLN("[WiFi] 获得IP地址: " + WiFi.localIP().toString());
             wifiState = WIFI_CONNECTED;
+            rgb_set_mode(RGB_MODE_ON);
+            rgb_set_color(RGB_GREEN);
             break;
         case ARDUINO_EVENT_WIFI_STA_LOST_IP:
             DEBUG_PRINTLN("[WiFi] IP地址丢失");
             wifiState = WIFI_DISCONNECTED;
-            lastBlinkMillis = millis(); // 重置闪烁定时器
+            lastBlinkMillis = millis();
+            rgb_set_mode(RGB_MODE_BREATH);
+            rgb_set_color(RGB_RED);
             break;
         default:
             break;
@@ -284,6 +290,11 @@ void setup() {
     
     WiFi.onEvent(handleWiFiEvent);
     WiFi.mode(WIFI_STA);
+    
+    // 初始化RGB为红色呼吸状态（未联网）
+    rgb_set_mode(RGB_MODE_BREATH);
+    rgb_set_color(RGB_RED);
+    
     startWiFiConnection();
 
     // 初始化 MQTT
@@ -409,6 +420,9 @@ void loop() {
     
     /* MQTT 循环处理 */
     mqtt_loop();
+    
+    /* 更新 RGB 状态 */
+    rgb_update();
     
     /* 更新 OLED 显示 */
     updateOledDisplay();

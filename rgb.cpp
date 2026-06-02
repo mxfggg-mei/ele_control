@@ -125,15 +125,27 @@ void rgb_update(void)
             break;
             
         case RGB_MODE_BREATH:
-            // 简化版呼吸灯（实际需要更复杂的 PWM 控制）
-            if (currentMillis - rgb_last_update >= 20) {
+            if (currentMillis - rgb_last_update >= 40) {
                 rgb_last_update = currentMillis;
                 rgb_brightness++;
-                if (rgb_brightness > 255) {
+                if (rgb_brightness >= 255) {
                     rgb_brightness = 0;
                 }
-                // 这里需要更复杂的算法，暂时简化
-                rgb_set_color(rgb_current_color);
+                // 使用正弦波实现平滑呼吸效果，范围10-240避免完全熄灭和过亮
+                float breath_f = 10.0 + 115.0 * (1.0 + sin(rgb_brightness * 2 * PI / 255.0));
+                uint8_t breath = (uint8_t)breath_f;
+                
+                // 提取RGB分量并应用呼吸亮度（使用浮点数计算提高精度）
+                uint8_t r = (rgb_current_color >> 16) & 0xFF;
+                uint8_t g = (rgb_current_color >> 8) & 0xFF;
+                uint8_t b = rgb_current_color & 0xFF;
+                
+                r = (uint8_t)(r * breath_f / 255.0);
+                g = (uint8_t)(g * breath_f / 255.0);
+                b = (uint8_t)(b * breath_f / 255.0);
+                
+                pixels.setPixelColor(0, pixels.Color(r, g, b));
+                pixels.show();
             }
             break;
             
@@ -158,20 +170,16 @@ void rgb_breath(uint32_t color, uint8_t brightness)
     uint8_t g = (color >> 8) & 0xFF;
     uint8_t b = color & 0xFF;
     
-    // 渐变：亮
-    for (uint8_t i = 0; i < brightness; i++) {
-        pixels.setPixelColor(0, pixels.Color(r * i / brightness, 
-                                              g * i / brightness, 
-                                              b * i / brightness));
-        pixels.show();
-        //delay(10);
-    }
-    
-    // 渐变：灭
-    for (uint8_t i = brightness; i > 0; i--) {
-        pixels.setPixelColor(0, pixels.Color(r * i / brightness, 
-                                              g * i / brightness, 
-                                              b * i / brightness));
+    // 使用正弦波实现平滑呼吸效果
+    for (uint8_t i = 0; i < 255; i++) {
+        float breath_f = 10.0 + 115.0 * (1.0 + sin(i * 2 * PI / 255.0));
+        uint8_t breath = (uint8_t)breath_f;
+        
+        pixels.setPixelColor(0, pixels.Color(
+            (uint8_t)(r * breath_f / 255.0),
+            (uint8_t)(g * breath_f / 255.0),
+            (uint8_t)(b * breath_f / 255.0)
+        ));
         pixels.show();
         //delay(10);
     }
