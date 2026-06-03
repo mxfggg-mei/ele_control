@@ -121,6 +121,7 @@ void continueWiFiConnection(void);
 void handleWiFiConnected(void);
 void handleWiFiDisconnected(void);
 void handleKeyEvent(void);
+
 void updateOledDisplay(void);
 
 /**
@@ -146,7 +147,7 @@ void handleWiFiEvent(WiFiEvent_t event) {
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
             DEBUG_PRINTLN("[WiFi] 获得IP地址: " + WiFi.localIP().toString());
             wifiState = WIFI_CONNECTED;
-            rgb_set_mode(RGB_MODE_ON);
+            rgb_set_mode(RGB_MODE_BREATH);
             rgb_set_color(RGB_GREEN);
             break;
         case ARDUINO_EVENT_WIFI_STA_LOST_IP:
@@ -229,13 +230,6 @@ void handleWiFiConnected(void) {
  * @note     继电器电平定义：HIGH=ON(吸合), LOW=OFF(断开)
  */
 void updateLedState(void) {
-    // RGB 灯始终与 LED 同步
-    if (lightEnabled) {
-        rgb_set_color(RGB_WHITE);
-    } else {
-        rgb_off();
-    }
-    
     // 控制实际继电器（仅在 KEY1 ON 时有效）
     if (key1_is_on()) {
         LED(lightEnabled ? HIGH : LOW);

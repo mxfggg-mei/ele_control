@@ -246,6 +246,11 @@ void mqtt_loop(void) {
             mqttNeedPublish = false;
             mqtt_publish_status();
         }
+        
+        // 5秒后重置主动上报标志，允许应答后续的get_status查询
+        if (mqttRecentlyPublished && (currentMillis - mqttLastPublishTime >= 5000)) {
+            mqttRecentlyPublished = false;
+        }
     }
 }
 

@@ -40,7 +40,7 @@ void rgb_init(void)
     Serial.println(NUMPIXELS);
     
     // 启动测试：快速闪烁白色（减少延时）
-    rgb_set_color(RGB_WHITE);
+    //rgb_set_color(RGB_WHITE);
     //delay(100);
     rgb_off();
 }
