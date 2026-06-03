@@ -15,6 +15,8 @@
 #include "rgb.h"
 #include "mqtt.h"
 #include "version.h"
+#include "config.h"
+#include "serial_cmd.h"
 #include <WiFi.h>  // 确保已安装 ESP32 开发板支持包
 #include <U8g2lib.h>
 #include <Wire.h>
@@ -291,7 +293,8 @@ void setup() {
     
     startWiFiConnection();
 
-    // 初始化 MQTT
+    config_init();
+    serial_cmd_init();
     mqtt_init();
 
     u8g2.begin();
@@ -355,6 +358,7 @@ void loop() {
     continueWiFiConnection();
     updateLedState();
     handleWiFiDisconnected();
+    serial_cmd_process();
     
     if (wifiState == WIFI_CONNECTED) {
         if (currentMillis - lastHeartbeatMillis >= HEARTBEAT_INTERVAL) {

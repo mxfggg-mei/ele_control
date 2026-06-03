@@ -1,7 +1,9 @@
 #ifndef __MQTT_H__
 #define __MQTT_H__
 
-/* ==================== MQTT 配置 ==================== */
+#include "config.h"
+
+/* ==================== MQTT 默认配置 ==================== */
 #define MQTT_SERVER      "47.98.170.180"  /* MQTT 服务器地址 */
 #define MQTT_PORT        8081             /* MQTT 端口 */
 #define MQTT_USERNAME    "dzdx_emqx"      /* MQTT 用户名 */
@@ -28,5 +30,6 @@ bool mqtt_is_connected(void);                  /* 检查 MQTT 是否连接 */
 void mqtt_publish_status(void);                /* 发布设备状态 */
 void mqtt_request_publish(void);               /* 请求立即发布状态 */
 void mqtt_set_threshold(float temp, float light);  /* 设置阈值 */
+void mqtt_reconnect_with_config(const mqtt_config_t* config);  /* 使用新配置重新连接 */
 
 #endif /* __MQTT_H__ */

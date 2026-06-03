@@ -4,6 +4,7 @@
 #include "mqtt.h"
 #include "version.h"
 #include "key.h"
+#include "config.h"
 
 /* 外部变量声明 */
 extern float temperature;
@@ -21,6 +22,10 @@ PubSubClient mqttClient(mqttWifiClient);
 /* Topic 缓冲区 */
 static char mqttTopicStatus[64];
 static char mqttTopicCommand[64];
+
+/* 当前使用的配置 */
+static mqtt_config_t currentMqttConfig;
+static bool configLoaded = false;
 
 /* 连接状态 */
 static bool mqttConnected = false;
@@ -176,17 +181,16 @@ void mqtt_on_message(char* topic, byte* payload, unsigned int length) {
  * @retval      无
  */
 void mqtt_init(void) {
-    // 设置服务器地址和端口
-    mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
+    config_load(&currentMqttConfig);
+    configLoaded = true;
     
-    // 设置回调函数
+    mqttClient.setServer(currentMqttConfig.server, currentMqttConfig.port);
     mqttClient.setCallback(mqtt_on_message);
     
-    // 构建 Topic
     snprintf(mqttTopicStatus, sizeof(mqttTopicStatus), 
-             "%s%s%s", MQTT_TOPIC_STATUS_PREFIX, DEVICE_ID, MQTT_TOPIC_STATUS_SUFFIX);
+             "%s%s%s", MQTT_TOPIC_STATUS_PREFIX, currentMqttConfig.deviceId, MQTT_TOPIC_STATUS_SUFFIX);
     snprintf(mqttTopicCommand, sizeof(mqttTopicCommand), 
-             "%s%s%s", MQTT_TOPIC_COMMAND_PREFIX, DEVICE_ID, MQTT_TOPIC_COMMAND_SUFFIX);
+             "%s%s%s", MQTT_TOPIC_COMMAND_PREFIX, currentMqttConfig.deviceId, MQTT_TOPIC_COMMAND_SUFFIX);
     
     Serial.print("[MQTT] 状态 Topic: ");
     Serial.println(mqttTopicStatus);
@@ -206,8 +210,11 @@ void mqtt_connect(void) {
     
     Serial.print("[MQTT] 正在连接...");
     
-    // 尝试连接
-    if (mqttClient.connect(DEVICE_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
+    const char* deviceId = configLoaded ? currentMqttConfig.deviceId : DEVICE_ID;
+    const char* username = configLoaded ? currentMqttConfig.username : MQTT_USERNAME;
+    const char* password = configLoaded ? currentMqttConfig.password : MQTT_PASSWORD;
+    
+    if (mqttClient.connect(deviceId, username, password)) {
         mqttConnected = true;
         Serial.println("成功");
         
@@ -277,9 +284,12 @@ void mqtt_publish_status(void) {
     StaticJsonDocument<256> doc;
     doc["temperature"] = temperature;
     doc["light"] = (int)lightValue;
+    doc["temp_threshold"] = tempThreshold;
+    doc["light_threshold"] = lightThreshold;
     doc["mode"] = g_autoMode ? "auto" : "manual";
     doc["key1_lock"] = key1_is_on();
     doc["relay3"] = lightEnabled;
+    doc["relay4"] = fanEnabled;
     
     // 序列化 JSON
     char payload[256];
@@ -318,4 +328,36 @@ void mqtt_set_threshold(float temp, float light) {
  */
 void mqtt_request_publish(void) {
     mqttNeedPublish = true;
+}
+
+/**
+ * @brief       使用新配置重新连接MQTT
+ * @param       config: 新的MQTT配置
+ * @retval      无
+ */
+void mqtt_reconnect_with_config(const mqtt_config_t* config) {
+    if (config == NULL) {
+        Serial.println("[MQTT] 错误: 配置指针为空");
+        return;
+    }
+    
+    Serial.println("[MQTT] 正在使用新配置重新连接...");
+    
+    memcpy(&currentMqttConfig, config, sizeof(mqtt_config_t));
+    
+    mqttClient.disconnect();
+    
+    mqttClient.setServer(currentMqttConfig.server, currentMqttConfig.port);
+    
+    snprintf(mqttTopicStatus, sizeof(mqttTopicStatus), 
+             "%s%s%s", MQTT_TOPIC_STATUS_PREFIX, currentMqttConfig.deviceId, MQTT_TOPIC_STATUS_SUFFIX);
+    snprintf(mqttTopicCommand, sizeof(mqttTopicCommand), 
+             "%s%s%s", MQTT_TOPIC_COMMAND_PREFIX, currentMqttConfig.deviceId, MQTT_TOPIC_COMMAND_SUFFIX);
+    
+    Serial.print("[MQTT] 新状态 Topic: ");
+    Serial.println(mqttTopicStatus);
+    Serial.print("[MQTT] 新命令 Topic: ");
+    Serial.println(mqttTopicCommand);
+    
+    mqtt_connect();
 }
