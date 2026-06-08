@@ -5,3 +5,5 @@ bak
 mpy
 mpy+crc32
 __pycache__
+
+config.h

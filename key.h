@@ -31,7 +31,7 @@
 
 /* 去抖动配置 */
 #define KEY_DEBOUNCE_TIME    20   /* 按键去抖动时间 (ms) */
-#define KEY_LONG_PRESS_TIME  2000 /* 长按时间阈值 (ms) */
+#define KEY_LONG_PRESS_TIME  1000 /* 长按时间阈值 (ms) */
 
 /* 按键事件类型 */
 #define KEY_EVENT_NONE       0    /* 无事件 */

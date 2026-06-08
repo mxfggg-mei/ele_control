@@ -28,7 +28,8 @@ static uint8_t key1_lastReading = LOW;
 /* ==================== KEY2: 自复位按键（中断模式） ==================== */
 static unsigned long key2_pressStartTime = 0;
 static bool key2_longPressTriggered = false;
-static bool key2_pressed = false;  // 当前是否按下
+static volatile bool key2_pressed = false;  // 当前是否按下（volatile 保证 ISR 安全）
+static unsigned long key2_lastInterruptTime = 0;  // 中断去抖时间
 
 /**
  * @brief       KEY1 初始化（自锁总开关）
@@ -92,8 +93,8 @@ void key2_init(void)
     // 配置引脚为输入下拉
     pinMode(KEY_PIN2, INPUT_PULLDOWN);
     
-    // 附加中断：上升沿触发（按键按下）
-    attachInterrupt(digitalPinToInterrupt(KEY_PIN2), key2_isr_handler, RISING);//
+    // 附加中断：仅上升沿触发（按键按下）
+    attachInterrupt(digitalPinToInterrupt(KEY_PIN2), key2_isr_handler, RISING);
     
     // 初始化变量
     key2_pressStartTime = 0;
@@ -109,25 +110,25 @@ void key2_init(void)
  */
 void key2_isr_handler(void)
 {
-    static unsigned long lastInterruptTime = 0;
     unsigned long currentTime = millis();
     
     // 去抖：忽略 KEY_DEBOUNCE_TIME 内的重复中断
-    if (currentTime - lastInterruptTime < KEY_DEBOUNCE_TIME) {
+    if (currentTime - key2_lastInterruptTime < KEY_DEBOUNCE_TIME) {
         return;
     }
     
-    // 重要：验证按键是否真的按下（GPIO 应该是 HIGH）
+    // 再次验证：确保是真正的按下
     if (digitalRead(KEY_PIN2) != HIGH) {
-        // 不是真正的按下，可能是干扰
         return;
     }
     
-    lastInterruptTime = currentTime;
-    
-    // 记录按下时间
     key2_pressStartTime = currentTime;
     key2_pressed = true;
+    key2_longPressTriggered = false;
+    key2_lastInterruptTime = currentTime;
+    
+    Serial.print("[KEY2 ISR] 按下 @");
+    Serial.println(currentTime);
 }
 
 /**
@@ -148,6 +149,14 @@ bool key2_is_pressed(void)
  *              KEY_EVENT_NONE: 无事件
  * @note        在 loop() 中调用，检测按键释放后的事件
  */
+/**
+ * @brief       获取 KEY2 事件（非阻塞，优化长按检测）
+ * @param       无
+ * @retval      KEY_EVENT_SHORT_PRESS: 短按（<1s）
+ *              KEY_EVENT_LONG_PRESS: 长按（≥1s）
+ *              KEY_EVENT_NONE: 无事件
+ * @note        在 loop() 中调用，按键释放时产生事件
+ */
 uint8_t key2_get_event(void)
 {
     uint8_t event = KEY_EVENT_NONE;
@@ -156,54 +165,36 @@ uint8_t key2_get_event(void)
     if (key2_pressed) {
         unsigned long pressDuration = millis() - key2_pressStartTime;
         
-        // 检查是否释放（读取当前引脚状态）
-        uint8_t currentReading = digitalRead(KEY_PIN2);
-        
-        if (currentReading == LOW) {
+        // 检查是否释放（读取 GPIO 状态）
+        if (digitalRead(KEY_PIN2) == LOW) {
             // 按键已释放
-            
-            // 验证：按下时间必须大于去抖时间，防止误触发
-            if (pressDuration < KEY_DEBOUNCE_TIME) {
-                Serial.print("[KEY2] 异常：按下时间过短 (");
-                Serial.print(pressDuration);
-                Serial.println("ms)，忽略");
-                key2_pressed = false;
-                return KEY_EVENT_NONE;
-            }
-            
-            key2_pressed = false;
-            
-            // 防止异常值
-            if (pressDuration > 10000) {
-                pressDuration = 0;
-            }
-            
-            Serial.print("[KEY2] 按下时长：");
+            Serial.print("[KEY2] 释放检测：");
             Serial.print(pressDuration);
-            Serial.print(" ms (阈值：");
-            Serial.print(KEY_DEBOUNCE_TIME);
-            Serial.print("-");
-            Serial.print(KEY_LONG_PRESS_TIME);
-            Serial.println("ms)");
+            Serial.println("ms");
             
-            // 判断事件类型
-            if (pressDuration >= KEY_LONG_PRESS_TIME) {
-                // 长按释放
-                Serial.println("[KEY2] 长按已触发，释放时不产生事件");
-                event = KEY_EVENT_NONE;
+            // 如果未触发长按，产生短按事件
+            if (!key2_longPressTriggered) {
+                if (pressDuration >= KEY_DEBOUNCE_TIME) {
+                    event = KEY_EVENT_SHORT_PRESS;
+                    Serial.println("[KEY2] >> 短按事件");
+                } else {
+                    Serial.println("[KEY2] 忽略抖动");
+                }
             } else {
-                // 短按
-                event = KEY_EVENT_SHORT_PRESS;
-                Serial.println("[KEY2] >> 短按事件触发");
+                Serial.println("[KEY2] 已触发长按，忽略释放");
             }
             
+            // 重置状态
+            key2_pressed = false;
             key2_longPressTriggered = false;
+            
         } else {
             // 按键仍按住，检查长按
             if (!key2_longPressTriggered && pressDuration >= KEY_LONG_PRESS_TIME) {
                 key2_longPressTriggered = true;
                 event = KEY_EVENT_LONG_PRESS;
-                Serial.println("[KEY2] >> 长按事件触发");
+                Serial.print("[KEY2] >> 长按触发 @");
+                Serial.println(pressDuration);
             }
         }
     }

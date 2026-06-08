@@ -25,11 +25,9 @@
 #define I2C_SDA  4  // 自定义 SDA 引脚
 #define I2C_SCL  5  // 自定义 SCL 引脚
 
-// 使用软件 I2C - SH1116 驱动
-//U8G2_SH1116_128X64_VCOMH0_F_SW_I2C u8g2(U8G2_R0, /* clock=*/ I2C_SCL, /* data=*/ I2C_SDA, /* reset=*/ U8X8_PIN_NONE);
-
-// 备用 SH1106 驱动（如果 SH1116 有问题）
+// 使用软件 I2C - SH1106 驱动（兼容 SH1116，需要手动偏移）
 U8G2_SH1106_128X64_VCOMH0_F_SW_I2C u8g2(U8G2_R0, /* clock=*/ I2C_SCL, /* data=*/ I2C_SDA, /* reset=*/ U8X8_PIN_NONE);
+#define OLED_OFFSET 4  // SH1116 屏幕需要 4 像素水平偏移
 
 /* ==================== 调试开关 ==================== */
 #define DEBUG_ENABLE  1
@@ -330,21 +328,29 @@ void setup() {
     u8g2.sendBuffer();
     //*/
     
-    /* 启动画面 */
+    /* 开机画面 */
     u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.setCursor(4, 20);
-    u8g2.print("12345 SH1106 OLED");
-
-    u8g2.setCursor(4, 40);
-    u8g2.print("LIGHT 0.96 inch");
-
-    u8g2.setCursor(4, 55);
-    u8g2.print("LIGHT U8g2 Driver");
+    u8g2.setFont(u8g2_font_wqy12_t_gb2312);  // 12像素GB2312字体
+    
+    // 第1行：欢迎（居中）
+    u8g2.setCursor(OLED_OFFSET + 0, 16);
+    u8g2.print("欢迎使用化工智能控制");
+    
+    // 第2行：设备ID
+    u8g2.setCursor(OLED_OFFSET, 36);
+    u8g2.print("ID:");
+    u8g2.print(DEVICE_ID);
+    
+    // 第3行：版本
+    u8g2.setCursor(OLED_OFFSET, 56);
+    u8g2.print("V");
+    u8g2.print(VERSION);
+    
     u8g2.sendBuffer();
+    delay(2000);  // 显示2秒
+    
     Serial.println("OLED display content updated");
     Serial.println("System ready!");
-    delay(100);
 }
 
 /**
@@ -444,9 +450,7 @@ void handleKeyEvent(void) {
         
         if (key1On) {
             Serial.println("[Key1] 总开关 ON - 允许继电器输出");
-            // 强制关闭所有继电器，等待updateLedState恢复正确状态
-            LED(LOW);
-            FAN(LOW);
+            // 直接由 updateLedState() 根据内部状态恢复继电器
         } else {
             Serial.println("[Key1] 总开关 OFF - 强制断开继电器");
             // 强制关闭所有继电器
@@ -504,13 +508,13 @@ void handleKeyEvent(void) {
                     
                     if (g_autoMode) {
                         // 切换到自动模式
-                        wifiState = WIFI_IDLE;
-                        startWiFiConnection();
+                       // wifiState = WIFI_IDLE;
+                       // startWiFiConnection();
                         Serial.println("[Key2] 长按 - 切换到自动模式");
                     } else {
                         // 切换到手动模式
-                        wifiState = WIFI_DISCONNECTED;
-                        WiFi.disconnect();
+                       // wifiState = WIFI_DISCONNECTED;
+                       // WiFi.disconnect();
                         Serial.println("[Key2] 长按 - 切换到手动模式");
                     }
                     mqtt_request_publish();  // 立即上报状态
@@ -558,32 +562,36 @@ void updateOledDisplay(void) {
     lastUpdateMillis = currentMillis;
     
     u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_6x13_tr);  // 6x13 像素字体
+    
+    // 使用支持中英文混合的字体（unifont包含完整ASCII + 常用汉字）
+    u8g2.setFont(u8g2_font_wqy12_t_gb2312);  // GB2312小字体
     
     char buffer[64];
     
-    // 第 1 行：显示模式（自动/手动）和总闸状态（KEY1）
-    u8g2.setCursor(4, 12);
-    snprintf(buffer, sizeof(buffer), "MODE:%s  MAIN:%s", 
-             g_autoMode ? "AUTO" : "MANUAL",     // MODE: 自动/手动（由 KEY2 长按切换）
-             key1_is_on() ? "ON" : "OFF");       // MAIN: 总开关状态（由 KEY1 控制）
+    // 第 1 行：模式:自动/手动  主:开/关
+    u8g2.setCursor(OLED_OFFSET, 14);
+    snprintf(buffer, sizeof(buffer), "模式:%s 总闸:%s", 
+             g_autoMode ? "自动" : "手动",
+             key1_is_on() ? "开" : "关");
     u8g2.print(buffer);
     
-    //u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.setCursor(4, 26);
-    snprintf(buffer, sizeof(buffer), "LIGHT:%.0f/%.0f", 
-             lightValue, lightThreshold);
+    // 第 2 行：光:1234/300
+    u8g2.setCursor(OLED_OFFSET, 30);
+    snprintf(buffer, sizeof(buffer), "光强:%.0f/%.0f", lightValue, lightThreshold);
     u8g2.print(buffer);
     
-    u8g2.setCursor(4, 40);
-    snprintf(buffer, sizeof(buffer), "TEMP:%.1f/%.1f", 
-             temperature, tempThreshold);
+    // 第 3 行：温:25.5/28.0
+    u8g2.setCursor(OLED_OFFSET, 46);
+    snprintf(buffer, sizeof(buffer), "温度:%.1f/%.1f", temperature, tempThreshold);
     u8g2.print(buffer);
     
-    u8g2.setCursor(4, 54);
-    snprintf(buffer, sizeof(buffer), "LED:%s  FAN:%s", 
-             lightEnabled ? "ON" : "OFF",
-             fanEnabled ? "ON" : "OFF");
+    // 第 4 行：灯:开 风:关（受总闸控制）
+    u8g2.setCursor(OLED_OFFSET, 62);
+    // 总闸关闭时，强制显示关闭状态
+    bool key1State = key1_is_on();
+    snprintf(buffer, sizeof(buffer), "灯光:%s 风扇:%s", 
+             (key1State && lightEnabled) ? "开" : "关",
+             (key1State && fanEnabled) ? "开" : "关");
     u8g2.print(buffer);
     
     u8g2.sendBuffer();
