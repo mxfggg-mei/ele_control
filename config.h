@@ -37,6 +37,18 @@ bool wifi_config_is_valid(const AppWifiConfig* config);
 /* 获取全局配置 */
 AppWifiConfig* get_wifi_config(void);
 
+/* 工作参数（模式/阈值/继电器状态，重启后恢复） */
+typedef struct {
+    uint8_t  autoMode;         /* 0=manual, 1=auto */
+    uint8_t  relayState;       /* 0-3 继电器状态 */
+    float tempThreshold;
+    float lightThreshold;
+} work_param_t;
+
+void param_save(void);
+void param_load(void);
+void param_erase(void);
+
 /* MQTT 配置函数 */
 void config_init(void);
 void config_load(mqtt_config_t* config);

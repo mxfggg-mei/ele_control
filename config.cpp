@@ -6,6 +6,7 @@
 /* Preferences 命名空间 */
 #define PREF_NAMESPACE_WIFI  "wifi_config"
 #define PREF_NAMESPACE_MQTT "mqtt_config"
+#define PREF_NAMESPACE_WORK "work_param"
 
 /* WiFi 键名 */
 #define PREF_KEY_WIFI_SSID   "ssid"
@@ -227,6 +228,70 @@ void config_set_default(mqtt_config_t* config) {
     strncpy(config->username, DEFAULT_USERNAME, sizeof(config->username));
     strncpy(config->password, DEFAULT_PASSWORD, sizeof(config->password));
     strncpy(config->deviceId, DEFAULT_DEVICE_ID, sizeof(config->deviceId));
+}
+
+/* ==================== 工作参数持久化 ==================== */
+
+/* 外部工作变量 */
+extern bool g_autoMode;
+extern uint8_t g_relayState;
+extern float tempThreshold;
+extern float lightThreshold;
+
+/**
+ * @brief       保存工作参数到 Flash
+ * @param       无
+ * @retval      无
+ */
+void param_save(void) {
+    if (!prefs.begin(PREF_NAMESPACE_WORK, false)) {
+        Serial.println("[Param] 无法打开Preferences，保存失败");
+        return;
+    }
+    prefs.putUChar("autoMode", g_autoMode ? 1 : 0);
+    prefs.putUChar("relaySt", g_relayState);
+    prefs.putFloat("tempThr", tempThreshold);
+    prefs.putFloat("lightThr", lightThreshold);
+    prefs.end();
+}
+
+/**
+ * @brief       从 Flash 加载工作参数
+ * @param       无
+ * @retval      无
+ */
+void param_load(void) {
+    if (!prefs.begin(PREF_NAMESPACE_WORK, true)) {
+        return;  /* 首次启动，无保存数据 */
+    }
+    g_autoMode   = prefs.getUChar("autoMode", 1) != 0;
+    g_relayState = prefs.getUChar("relaySt", 0);
+    tempThreshold = prefs.getFloat("tempThr", 28.0f);
+    lightThreshold = prefs.getFloat("lightThr", 300.0f);
+    prefs.end();
+    
+    Serial.print("[Param] 已恢复: 模式=");
+    Serial.print(g_autoMode ? "自动" : "手动");
+    Serial.print(" 状态=");
+    Serial.print(g_relayState);
+    Serial.print(" 温度阈值=");
+    Serial.print(tempThreshold, 1);
+    Serial.print(" 光照阈值=");
+    Serial.println(lightThreshold, 1);
+}
+
+/**
+ * @brief       清除 Flash 中的工作参数
+ * @param       无
+ * @retval      无
+ */
+void param_erase(void) {
+    if (!prefs.begin(PREF_NAMESPACE_WORK, false)) {
+        return;
+    }
+    prefs.clear();
+    prefs.end();
+    Serial.println("[Param] 已清除Flash中的工作参数");
 }
 
 /**

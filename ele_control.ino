@@ -103,14 +103,11 @@ const unsigned long OLED_UPDATE_INTERVAL = 100;  // OLED 刷新间隔 (ms)
 bool g_forceOledUpdate = false;  // 全局强制更新标志
 
 /* ==================== 传感器读取相关变量 ==================== */
-unsigned long lastTempReadMillis = 0;
-const unsigned long TEMP_READ_INTERVAL = 1000;  // 温度读取间隔 (ms)
 unsigned long lastAdcReadMillis = 0;
 const unsigned long ADC_READ_INTERVAL = 200;  // ADC 读取间隔 (ms)
 
 /* 模拟传感器数据 */
 float lightValue = 0.0;         // 光照值（lux，由 GL5516 读取）
-float temperature = 25.5;        // 温度值（由 DS18B20 读取）
 bool lightEnabled = false;
 bool fanEnabled = false;
 
@@ -142,20 +139,14 @@ void handleWiFiEvent(WiFiEvent_t event) {
             DEBUG_PRINTLN("[WiFi] 连接断开");
             wifiState = WIFI_DISCONNECTED;
             lastBlinkMillis = millis();
-            rgb_set_mode(RGB_MODE_BREATH);
-            rgb_set_color(RGB_RED);
             break;
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
             handleWiFiConnected();
-            rgb_set_mode(RGB_MODE_BREATH);
-            rgb_set_color(RGB_GREEN);
             break;
         case ARDUINO_EVENT_WIFI_STA_LOST_IP:
             DEBUG_PRINTLN("[WiFi] IP地址丢失");
             wifiState = WIFI_DISCONNECTED;
             lastBlinkMillis = millis();
-            rgb_set_mode(RGB_MODE_BREATH);
-            rgb_set_color(RGB_RED);
             break;
         default:
             break;
@@ -294,12 +285,16 @@ void setup() {
     WiFi.onEvent(handleWiFiEvent);
     WiFi.mode(WIFI_STA);
     
-    // 初始化RGB为红色呼吸状态（未联网）
-    rgb_set_mode(RGB_MODE_BREATH);
-    rgb_set_color(RGB_RED);
-    
     // 先加载配置，再启动 WiFi 连接
+    // RGB 状态由 rgb_update_by_state() 在 loop 中自动管理
     config_init();
+    param_load();   // 恢复工作参数（模式/阈值/继电器状态）
+    // 恢复继电器输出状态
+    {
+        uint8_t stateBits = RELAY_STATE_TABLE[g_relayState];
+        lightEnabled = (stateBits & 0b01) != 0;
+        fanEnabled   = (stateBits & 0b10) != 0;
+    }
     serial_cmd_init();
     startWiFiConnection();
     mqtt_init();
@@ -311,15 +306,13 @@ void setup() {
     
     // 初始化温度传感器
     temp_init();
+    temp_task_create();  // 创建后台温度轮询任务
     
     // 初始化 ADC
     adc_init();
     
-    // RGB 灯测试：快速彩虹色循环
-    rgb_set_color(RGB_RED);
-    rgb_set_color(RGB_GREEN);
-    rgb_set_color(RGB_BLUE);
-    rgb_off();
+    // RGB 灯测试：启动多色快闪（红→绿→蓝→白）
+    rgb_boot_flash();
     
     /* 开机画面 */
     u8g2.clearBuffer();
@@ -353,21 +346,15 @@ void loop() {
     handleWiFiDisconnected();
     serial_cmd_process();
     
+    /* 缓存 WiFi 状态（避免 loop 内多次调用 WiFi.status() 导致延迟） */
+    wl_status_t wifiStatus = WiFi.status();
+    
     if (wifiState == WIFI_CONNECTED) {
         if (currentMillis - lastHeartbeatMillis >= HEARTBEAT_INTERVAL) {
             lastHeartbeatMillis = currentMillis;
             if (mqtt_debug_enabled) {
-                Serial.printf("[Heartbeat] TEMP: %.1f℃  |  LIGHT: %.1f lux\n", temperature, lightValue);
+                Serial.printf("[Heartbeat] TEMP: %.1f℃  |  LIGHT: %.1f lux\n", g_temperature, lightValue);
             }
-        }
-    }
-    
-    /* 读取温度传感器（非阻塞，每隔 1 秒读取一次） */
-    if (currentMillis - lastTempReadMillis >= TEMP_READ_INTERVAL) {
-        lastTempReadMillis = currentMillis;
-        float tempValue;
-        if (temp_read(&tempValue) == TEMP_OK) {
-            temperature = tempValue;
         }
     }
     
@@ -389,9 +376,9 @@ void loop() {
             lightEnabled = false;
         }
         // 温度控制：高于阈值+迟滞 开风扇，低于阈值-迟滞 关风扇
-        if (!fanEnabled && temperature > tempThreshold) {
+        if (!fanEnabled && g_temperature > tempThreshold) {
             fanEnabled = true;
-        } else if (fanEnabled && temperature < tempThreshold - TEMP_HYSTERESIS) {
+        } else if (fanEnabled && g_temperature < tempThreshold - TEMP_HYSTERESIS) {
             fanEnabled = false;
         }
         
@@ -404,7 +391,7 @@ void loop() {
             Serial.println(lightEnabled ? "ON" : "OFF");
             
             Serial.print("[Auto] 自动控制 - 温度: ");
-            Serial.print(temperature, 1);
+            Serial.print(g_temperature, 1);
             Serial.print("/");
             Serial.print(tempThreshold, 1);
             Serial.print(" ℃ → FAN: ");
@@ -421,8 +408,8 @@ void loop() {
     /* MQTT 循环处理 */
     mqtt_loop();
     
-    /* 更新 RGB 状态 */
-    rgb_update();
+    /* 更新 RGB 状态（自动根据设备状态选择灯效） */
+    rgb_update_by_state(wifiStatus);
     
     /* 更新 OLED 显示 */
     updateOledDisplay();
@@ -487,6 +474,7 @@ void handleKeyEvent(void) {
                         Serial.print("[Key2] 状态 ");
                         Serial.println(RELAY_STATE_NAME[g_relayState]);
                         
+                        param_save();   // 保存继电器状态
                         setOledForceUpdate();
                         mqtt_request_publish();
                     } else {
@@ -503,16 +491,11 @@ void handleKeyEvent(void) {
                     g_autoMode = !g_autoMode;
                     
                     if (g_autoMode) {
-                        // 切换到自动模式
-                       // wifiState = WIFI_IDLE;
-                       // startWiFiConnection();
                         Serial.println("[Key2] 长按 - 切换到自动模式");
                     } else {
-                        // 切换到手动模式
-                       // wifiState = WIFI_DISCONNECTED;
-                       // WiFi.disconnect();
                         Serial.println("[Key2] 长按 - 切换到手动模式");
                     }
+                    param_save();   // 保存模式
                     mqtt_request_publish();  // 立即上报状态
                 } else {
                     Serial.println("[Key2] 长按无效 - 总闸已关闭");
@@ -582,7 +565,7 @@ void updateOledDisplay(void) {
     
     // ===== 第 4 行：温:25.5/28.0 =====
     u8g2.setCursor(OLED_OFFSET, 50);
-    snprintf(buffer, sizeof(buffer), "温度: %.1f/%.1f", temperature, tempThreshold);
+    snprintf(buffer, sizeof(buffer), "温度: %.1f/%.1f", g_temperature, tempThreshold);
     u8g2.print(buffer);
     
     // ===== 第 5 行：灯:开 风:关（受总闸控制） =====

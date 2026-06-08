@@ -103,8 +103,7 @@ void handle_wifi_command(const char* cmd) {
         memcpy(get_wifi_config(), &currentWifiConfig, sizeof(AppWifiConfig));
         wifiSetupState = 0;
         WiFi.disconnect();  // 断开 WiFi 连接
-        rgb_set_mode(RGB_MODE_BREATH);
-        rgb_set_color(RGB_RED);
+        // RGB 状态由 rgb_update_by_state() 在 loop 中自动更新为 WiFi 未连接灯效
         Serial.println("[WiFi] 配置已重置，WiFi 已断开");
     }
     else if (strcmp(cmd, "wifi save") == 0) {

@@ -7,7 +7,7 @@
 #include "config.h"
 
 /* 外部变量声明 */
-extern float temperature;
+extern float g_temperature;
 extern float lightValue;
 extern bool g_autoMode;
 extern bool lightEnabled;
@@ -150,6 +150,7 @@ void mqtt_on_message(char* topic, byte* payload, unsigned int length) {
             g_autoMode = false;
             if (mqtt_debug_enabled) Serial.println("[MQTT] 切换到手动模式");
         }
+        param_save();  // 保存模式
         mqtt_publish_status();  // 立即上报新状态
         
     } else if (strcmp(cmd, MQTT_CMD_GET_STATUS) == 0) {
@@ -179,6 +180,7 @@ void mqtt_on_message(char* topic, byte* payload, unsigned int length) {
         if (light > 0) {
             lightThreshold = light;
         }
+        param_save();  // 保存阈值
         mqtt_publish_status();  // 立即上报新状态
         
     } else if (strcmp(cmd, MQTT_CMD_REBOOT) == 0) {
@@ -314,7 +316,7 @@ void mqtt_publish_status(void) {
     
     // 构建 JSON 消息
     StaticJsonDocument<256> doc;
-    doc["temperature"] = temperature;
+    doc["temperature"] = g_temperature;
     doc["light"] = (int)lightValue;
     doc["temp_threshold"] = tempThreshold;
     doc["light_threshold"] = lightThreshold;
@@ -355,6 +357,7 @@ void mqtt_set_threshold(float temp, float light) {
     if (light > 0) {
         lightThreshold = light;
     }
+    param_save();  // 保存阈值
 }
 
 /**
