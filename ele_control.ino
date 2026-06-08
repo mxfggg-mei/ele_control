@@ -563,33 +563,43 @@ void updateOledDisplay(void) {
     
     u8g2.clearBuffer();
     
-    // 使用支持中英文混合的字体（unifont包含完整ASCII + 常用汉字）
-    u8g2.setFont(u8g2_font_wqy12_t_gb2312);  // GB2312小字体
+    // 使用支持中英文混合的字体
+    u8g2.setFont(u8g2_font_wqy12_t_gb2312);  // 12px GB2312字体
     
     char buffer[64];
     
-    // 第 1 行：模式:自动/手动  主:开/关
-    u8g2.setCursor(OLED_OFFSET, 14);
-    snprintf(buffer, sizeof(buffer), "模式:%s 总闸:%s", 
+    // ===== 第 1 行：WiFi 和 MQTT 状态（新增） =====
+    u8g2.setCursor(OLED_OFFSET, 11);
+    //snprintf(buffer, sizeof(buffer), "WiFi:%s MQTT:%s", 
+    //         (wifiState == WIFI_CONNECTED) ? "√" : "×",
+    //         mqtt_is_connected() ? "√" : "×");
+    snprintf(buffer, sizeof(buffer), "WiFi:%s  MQTT:%s", 
+             (wifiState == WIFI_CONNECTED) ? "√" : "\u00D7",
+             mqtt_is_connected() ? "\u221A" : "\u00D7");
+    u8g2.print(buffer);
+    
+    u8g2.setFont(u8g2_font_wqy12_t_gb2312);  // 12像素GB2312字体
+    // ===== 第 2 行：模式:自动/手动  主:开/关 =====
+    u8g2.setCursor(OLED_OFFSET, 24);
+    snprintf(buffer, sizeof(buffer), "模式: %s  总闸: %s", 
              g_autoMode ? "自动" : "手动",
              key1_is_on() ? "开" : "关");
     u8g2.print(buffer);
     
-    // 第 2 行：光:1234/300
-    u8g2.setCursor(OLED_OFFSET, 30);
-    snprintf(buffer, sizeof(buffer), "光强:%.0f/%.0f", lightValue, lightThreshold);
+    // ===== 第 3 行：光:1234/300 =====
+    u8g2.setCursor(OLED_OFFSET, 37);
+    snprintf(buffer, sizeof(buffer), "光强: %.0f/%.0f", lightValue, lightThreshold);
     u8g2.print(buffer);
     
-    // 第 3 行：温:25.5/28.0
-    u8g2.setCursor(OLED_OFFSET, 46);
-    snprintf(buffer, sizeof(buffer), "温度:%.1f/%.1f", temperature, tempThreshold);
+    // ===== 第 4 行：温:25.5/28.0 =====
+    u8g2.setCursor(OLED_OFFSET, 50);
+    snprintf(buffer, sizeof(buffer), "温度: %.1f/%.1f", temperature, tempThreshold);
     u8g2.print(buffer);
     
-    // 第 4 行：灯:开 风:关（受总闸控制）
-    u8g2.setCursor(OLED_OFFSET, 62);
-    // 总闸关闭时，强制显示关闭状态
+    // ===== 第 5 行：灯:开 风:关（受总闸控制） =====
+    u8g2.setCursor(OLED_OFFSET, 63);
     bool key1State = key1_is_on();
-    snprintf(buffer, sizeof(buffer), "灯光:%s 风扇:%s", 
+    snprintf(buffer, sizeof(buffer), "灯光: %s  风扇: %s", 
              (key1State && lightEnabled) ? "开" : "关",
              (key1State && fanEnabled) ? "开" : "关");
     u8g2.print(buffer);
