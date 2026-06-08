@@ -41,8 +41,6 @@ U8G2_SH1106_128X64_VCOMH0_F_SW_I2C u8g2(U8G2_R0, /* clock=*/ I2C_SCL, /* data=*/
 #endif
 
 /* ==================== 配置常量 ==================== */
-const char* WIFI_SSID = "iPhone_serendipity";     // WiFi名称
-const char* WIFI_PASSWORD = "qwerqwer";           // WiFi密码
 const uint8_t WIFI_CONNECT_ATTEMPTS = 20;         // WiFi最大连接尝试次数
 const unsigned long WIFI_CONNECT_DELAY = 500;     // 每次连接尝试间隔(ms)
 const unsigned long WIFI_RECONNECT_INTERVAL = 5000;  // WiFi重连间隔(ms)
@@ -50,6 +48,10 @@ const unsigned long LED_BLINK_INTERVAL = 500;     // LED闪烁间隔(ms)
 const unsigned long HEARTBEAT_INTERVAL = 10000;    // 心跳打印间隔(ms)
 const unsigned long KEY_BLINK_INTERVAL = 200;     // 按键长按LED闪烁间隔(ms)
 const long SERIAL_BAUD_RATE = 115200;             // 串口波特率
+
+/* 自动控制迟滞（避免临界值附近频繁开关） */
+#define TEMP_HYSTERESIS  0.5f   // 温度迟滞（℃）：温度高于 阈值+迟滞 开风扇，低于 阈值-迟滞 关风扇
+#define LIGHT_HYSTERESIS 10.0f  // 光照迟滞（lux）：光照低于 阈值-迟滞 开灯，高于 阈值+迟滞 关灯
 
 /* ==================== 状态变量 ==================== */
 enum WiFiState {
@@ -97,8 +99,7 @@ bool keyLongPressBlink = false;
 unsigned long lastKeyBlinkMillis = 0;
 
 /* ==================== OLED 显示相关变量 ==================== */
-unsigned long lastOledUpdateMillis = 0;
-const unsigned long OLED_UPDATE_INTERVAL = 500;  // OLED 刷新间隔 (ms)
+const unsigned long OLED_UPDATE_INTERVAL = 100;  // OLED 刷新间隔 (ms)
 bool g_forceOledUpdate = false;  // 全局强制更新标志
 
 /* ==================== 传感器读取相关变量 ==================== */
@@ -145,8 +146,7 @@ void handleWiFiEvent(WiFiEvent_t event) {
             rgb_set_color(RGB_RED);
             break;
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-            DEBUG_PRINTLN("[WiFi] 获得IP地址: " + WiFi.localIP().toString());
-            wifiState = WIFI_CONNECTED;
+            handleWiFiConnected();
             rgb_set_mode(RGB_MODE_BREATH);
             rgb_set_color(RGB_GREEN);
             break;
@@ -168,8 +168,15 @@ void handleWiFiEvent(WiFiEvent_t event) {
  * @retval   无
  */
 void startWiFiConnection() {
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    DEBUG_PRINT("[WiFi] 正在连接: " + String(WIFI_SSID) + "...");
+    AppWifiConfig* wifiCfg = get_wifi_config();
+    if (!wifi_config_is_valid(wifiCfg)) {
+        DEBUG_PRINTLN("[WiFi] 未配置WiFi，使用串口命令 'wifi scan' 配网");
+        wifiState = WIFI_DISCONNECTED;
+        return;
+    }
+    WiFi.begin(wifiCfg->ssid, wifiCfg->password);
+    DEBUG_PRINT("[WiFi] 正在连接: ");
+    DEBUG_PRINTLN(wifiCfg->ssid);
     wifiState = WIFI_CONNECTING;
     connectAttempt = 0;
     lastConnectMillis = millis();
@@ -218,8 +225,10 @@ void handleWiFiConnected(void) {
     DEBUG_PRINTLN("[WiFi] 信号强度：" + String(WiFi.RSSI()) + " dBm");
     wifiState = WIFI_CONNECTED;
     
-    // WiFi 连接成功后连接 MQTT
-    mqtt_connect();
+    // 连接成功自动保存配置到 Flash
+    wifi_config_save(get_wifi_config());
+    
+    // MQTT 连接交由 mqtt_loop() 处理（等待网络栈稳定后自动连接）
 }
 
 /**
@@ -289,10 +298,10 @@ void setup() {
     rgb_set_mode(RGB_MODE_BREATH);
     rgb_set_color(RGB_RED);
     
-    startWiFiConnection();
-
+    // 先加载配置，再启动 WiFi 连接
     config_init();
     serial_cmd_init();
+    startWiFiConnection();
     mqtt_init();
 
     u8g2.begin();
@@ -300,57 +309,35 @@ void setup() {
     u8g2.setContrast(0x60);  // SH1116 最佳对比度设置（0x00-0xFF）
     u8g2.setPowerSave(0);    // 开启显示
     
-    Serial.println("OLED SH1116 display initialized");
-    
     // 初始化温度传感器
     temp_init();
     
     // 初始化 ADC
     adc_init();
     
-    // RGB 灯测试：快速彩虹色循环（减少阻塞时间）
-    Serial.println("[RGB] 测试 RGB 灯...");
+    // RGB 灯测试：快速彩虹色循环
     rgb_set_color(RGB_RED);
-    //delay(100);
     rgb_set_color(RGB_GREEN);
-    //delay(100);
     rgb_set_color(RGB_BLUE);
-    //delay(100);
     rgb_off();
-    
-
-    //u8g2.clearBuffer();
-    //u8g2.drawFrame(0, 0, 120, 60);  // 画边框
-    //u8g2.setCursor(10, 30);
-    //delay(100);
-    /* 调试用 TEST 画面 - 正式使用时注释掉
-    u8g2.print("TEST");
-    u8g2.sendBuffer();
-    //*/
     
     /* 开机画面 */
     u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_wqy12_t_gb2312);  // 12像素GB2312字体
+    u8g2.setFont(u8g2_font_wqy12_t_gb2312);
     
-    // 第1行：欢迎（居中）
     u8g2.setCursor(OLED_OFFSET + 0, 16);
     u8g2.print("欢迎使用化工智能控制");
     
-    // 第2行：设备ID
     u8g2.setCursor(OLED_OFFSET, 36);
     u8g2.print("ID:");
     u8g2.print(DEVICE_ID);
     
-    // 第3行：版本
     u8g2.setCursor(OLED_OFFSET, 56);
     u8g2.print("V");
     u8g2.print(VERSION);
     
     u8g2.sendBuffer();
-    delay(2000);  // 显示2秒
-    
-    Serial.println("OLED display content updated");
-    Serial.println("System ready!");
+    delay(200);  // 开机画面短暂显示200ms后立刻进入主循环
 }
 
 /**
@@ -369,7 +356,9 @@ void loop() {
     if (wifiState == WIFI_CONNECTED) {
         if (currentMillis - lastHeartbeatMillis >= HEARTBEAT_INTERVAL) {
             lastHeartbeatMillis = currentMillis;
-            Serial.printf("[Heartbeat] TEMP: %.1f℃  |  LIGHT: %.1f lux\n", temperature, lightValue);
+            if (mqtt_debug_enabled) {
+                Serial.printf("[Heartbeat] TEMP: %.1f℃  |  LIGHT: %.1f lux\n", temperature, lightValue);
+            }
         }
     }
     
@@ -388,30 +377,37 @@ void loop() {
         lightValue = adc_read_lux();
     }
     
-    /* 自动模式下的传感器控制 */
-    if (g_autoMode) {
-        // 自动模式：根据传感器值自动控制
-        // LIGHT < 阈值 → 打开 LED（光照低时开灯）
-        bool newLightState = (lightValue < lightThreshold);
-        // TEMP > 阈值 → 打开 FAN
-        bool newFanState = (temperature > tempThreshold);
+    /* 自动模式下的传感器控制（带迟滞，避免临界值频繁开关） */
+    if (g_autoMode && key1_is_on()) {
+        bool oldLight = lightEnabled;
+        bool oldFan = fanEnabled;
         
-        if (newLightState != lightEnabled || newFanState != fanEnabled) {
-            lightEnabled = newLightState;
-            fanEnabled = newFanState;
-            
+        // 光照控制：低于阈值-迟滞 开灯，高于阈值+迟滞 关灯
+        if (!lightEnabled && lightValue < lightThreshold) {
+            lightEnabled = true;
+        } else if (lightEnabled && lightValue > lightThreshold + LIGHT_HYSTERESIS) {
+            lightEnabled = false;
+        }
+        // 温度控制：高于阈值+迟滞 开风扇，低于阈值-迟滞 关风扇
+        if (!fanEnabled && temperature > tempThreshold) {
+            fanEnabled = true;
+        } else if (fanEnabled && temperature < tempThreshold - TEMP_HYSTERESIS) {
+            fanEnabled = false;
+        }
+        
+        if (oldLight != lightEnabled || oldFan != fanEnabled) {
             Serial.print("[Auto] 自动控制 - 光照: ");
             Serial.print(lightValue, 1);
             Serial.print("/");
             Serial.print(lightThreshold, 1);
-            Serial.print(" lux (低亮开灯) → LED: ");
+            Serial.print(" lux → LED: ");
             Serial.println(lightEnabled ? "ON" : "OFF");
             
             Serial.print("[Auto] 自动控制 - 温度: ");
-            Serial.print(temperature);
+            Serial.print(temperature, 1);
             Serial.print("/");
-            Serial.print(tempThreshold);
-            Serial.print(" → FAN: ");
+            Serial.print(tempThreshold, 1);
+            Serial.print(" ℃ → FAN: ");
             Serial.println(fanEnabled ? "ON" : "OFF");
             
             setOledForceUpdate();  // 强制更新 OLED
@@ -449,10 +445,10 @@ void handleKeyEvent(void) {
         lastKey1State = key1On;
         
         if (key1On) {
-            Serial.println("[Key1] 总开关 ON - 允许继电器输出");
+            Serial.println("[Key1] 总开关 ON");
             // 直接由 updateLedState() 根据内部状态恢复继电器
         } else {
-            Serial.println("[Key1] 总开关 OFF - 强制断开继电器");
+            Serial.println("[Key1] 总开关 OFF");
             // 强制关闭所有继电器
             lightEnabled = false;
             fanEnabled = false;
@@ -552,8 +548,6 @@ void updateOledDisplay(void) {
     unsigned long currentMillis = millis();
     
     // 检查是否需要强制更新（通过全局标志）
-    extern bool g_forceOledUpdate;
-    
     if (!g_forceOledUpdate && (currentMillis - lastUpdateMillis < OLED_UPDATE_INTERVAL)) {
         return;
     }
@@ -568,17 +562,12 @@ void updateOledDisplay(void) {
     
     char buffer[64];
     
-    // ===== 第 1 行：WiFi 和 MQTT 状态（新增） =====
+    // ===== 第 1 行：WiFi 和 MQTT 状态 =====
     u8g2.setCursor(OLED_OFFSET, 11);
-    //snprintf(buffer, sizeof(buffer), "WiFi:%s MQTT:%s", 
-    //         (wifiState == WIFI_CONNECTED) ? "√" : "×",
-    //         mqtt_is_connected() ? "√" : "×");
-    snprintf(buffer, sizeof(buffer), "WiFi:%s  MQTT:%s", 
+    snprintf(buffer, sizeof(buffer), "WiFi: %s  MQTT: %s", 
              (wifiState == WIFI_CONNECTED) ? "√" : "\u00D7",
              mqtt_is_connected() ? "\u221A" : "\u00D7");
     u8g2.print(buffer);
-    
-    u8g2.setFont(u8g2_font_wqy12_t_gb2312);  // 12像素GB2312字体
     // ===== 第 2 行：模式:自动/手动  主:开/关 =====
     u8g2.setCursor(OLED_OFFSET, 24);
     snprintf(buffer, sizeof(buffer), "模式: %s  总闸: %s", 

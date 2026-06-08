@@ -78,9 +78,9 @@ uint8_t temp_read(float *temp)
     *temp = tempValue;
     
     // 调试打印
-    Serial.print("[TEMP] 温度：");
-    Serial.print(*temp);
-    Serial.println(" ℃");
+    //Serial.print("[TEMP] 温度：");
+    //Serial.print(*temp);
+    //Serial.println(" ℃");
     
     return TEMP_OK;
 }

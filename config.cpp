@@ -4,16 +4,25 @@
 #include <Arduino.h>
 
 /* Preferences 命名空间 */
-#define PREF_NAMESPACE "mqtt_config"
+#define PREF_NAMESPACE_WIFI  "wifi_config"
+#define PREF_NAMESPACE_MQTT "mqtt_config"
 
-/* 键名 */
+/* WiFi 键名 */
+#define PREF_KEY_WIFI_SSID   "ssid"
+#define PREF_KEY_WIFI_PASS   "password"
+
+/* MQTT 键名 */
 #define PREF_KEY_SERVER    "server"
 #define PREF_KEY_PORT      "port"
 #define PREF_KEY_USERNAME  "username"
 #define PREF_KEY_PASSWORD  "password"
 #define PREF_KEY_DEVICE_ID "device_id"
 
-/* 默认配置 */
+/* 默认 WiFi 配置 */
+#define DEFAULT_WIFI_SSID     ""
+#define DEFAULT_WIFI_PASSWORD ""
+
+/* 默认 MQTT 配置 */
 #define DEFAULT_SERVER     MQTT_SERVER
 #define DEFAULT_PORT       MQTT_PORT
 #define DEFAULT_USERNAME   MQTT_USERNAME
@@ -21,8 +30,103 @@
 #define DEFAULT_DEVICE_ID  DEVICE_ID
 
 /* 全局配置实例 */
-static mqtt_config_t g_config;
+static AppWifiConfig g_wifi_config;
+static mqtt_config_t g_mqtt_config;
 static Preferences prefs;
+
+/* ==================== WiFi 配置函数 ==================== */
+
+/**
+ * @brief       加载 WiFi 配置
+ * @param       config: WiFi 配置结构体指针
+ * @retval      无
+ */
+void wifi_config_load(AppWifiConfig* config) {
+    if (!prefs.begin(PREF_NAMESPACE_WIFI, true)) {
+        Serial.println("[WiFi Config] 无法打开Preferences，使用默认配置");
+        wifi_config_set_default(config);
+        return;
+    }
+    
+    size_t len;
+    len = prefs.getString(PREF_KEY_WIFI_SSID, config->ssid, sizeof(config->ssid));
+    if (len == 0) {
+        strncpy(config->ssid, DEFAULT_WIFI_SSID, sizeof(config->ssid));
+    }
+    
+    len = prefs.getString(PREF_KEY_WIFI_PASS, config->password, sizeof(config->password));
+    if (len == 0) {
+        strncpy(config->password, DEFAULT_WIFI_PASSWORD, sizeof(config->password));
+    }
+    
+    prefs.end();
+}
+
+/**
+ * @brief       保存 WiFi 配置到 Flash
+ * @param       config: WiFi 配置结构体指针
+ * @retval      无
+ */
+void wifi_config_save(const AppWifiConfig* config) {
+    if (!prefs.begin(PREF_NAMESPACE_WIFI, false)) {
+        Serial.println("[WiFi Config] 无法打开Preferences，保存失败");
+        return;
+    }
+    
+    prefs.putString(PREF_KEY_WIFI_SSID, config->ssid);
+    prefs.putString(PREF_KEY_WIFI_PASS, config->password);
+    prefs.end();
+    Serial.println("[WiFi Config] WiFi 配置已保存");
+}
+
+/**
+ * @brief       清除 Flash 中保存的 WiFi 配置
+ * @param       无
+ * @retval      无
+ */
+void wifi_config_erase(void) {
+    if (!prefs.begin(PREF_NAMESPACE_WIFI, false)) {
+        Serial.println("[WiFi Config] 无法打开Preferences，清除失败");
+        return;
+    }
+    prefs.clear();
+    prefs.end();
+    Serial.println("[WiFi Config] 已清除Flash中的WiFi配置");
+}
+
+/**
+ * @brief       设置 WiFi 默认配置
+ * @param       config: WiFi 配置结构体指针
+ * @retval      无
+ */
+void wifi_config_set_default(AppWifiConfig* config) {
+    config->ssid[0] = '\0';
+    config->password[0] = '\0';
+}
+
+/**
+ * @brief       打印 WiFi 配置
+ * @param       config: WiFi 配置结构体指针
+ * @retval      无
+ */
+void wifi_config_print(const AppWifiConfig* config) {
+    Serial.println("[WiFi Config] 当前配置:");
+    Serial.print("  SSID: ");
+    Serial.println(config->ssid[0] ? config->ssid : "(未设置)");
+    Serial.print("  密码: ");
+    Serial.println(config->password[0] ? "******" : "(未设置)");
+}
+
+/**
+ * @brief       检查 WiFi 配置是否有效
+ * @param       config: WiFi 配置结构体指针
+ * @retval      true: 有效，false: 无效
+ */
+bool wifi_config_is_valid(const AppWifiConfig* config) {
+    return (config->ssid[0] != '\0');
+}
+
+/* ==================== MQTT 配置函数 ==================== */
 
 /**
  * @brief       初始化配置管理
@@ -30,9 +134,10 @@ static Preferences prefs;
  * @retval      无
  */
 void config_init(void) {
-    prefs.begin(PREF_NAMESPACE, false);
-    config_load(&g_config);
-    prefs.end();
+    // 各配置加载函数自行管理 prefs.begin()/end()
+    config_load(&g_mqtt_config);
+    wifi_config_load(&g_wifi_config);
+    Serial.println("[Config] 配置加载完成");
 }
 
 /**
@@ -41,7 +146,7 @@ void config_init(void) {
  * @retval      无
  */
 void config_load(mqtt_config_t* config) {
-    if (!prefs.begin(PREF_NAMESPACE, true)) {
+    if (!prefs.begin(PREF_NAMESPACE_MQTT, true)) {
         Serial.println("[Config] 无法打开Preferences，使用默认配置");
         config_set_default(config);
         return;
@@ -73,8 +178,6 @@ void config_load(mqtt_config_t* config) {
     }
     
     prefs.end();
-    Serial.println("[Config] 配置加载完成");
-    config_print(config);
 }
 
 /**
@@ -83,7 +186,7 @@ void config_load(mqtt_config_t* config) {
  * @retval      无
  */
 void config_save(const mqtt_config_t* config) {
-    if (!prefs.begin(PREF_NAMESPACE, false)) {
+    if (!prefs.begin(PREF_NAMESPACE_MQTT, false)) {
         Serial.println("[Config] 无法打开Preferences，保存失败");
         return;
     }
@@ -95,7 +198,22 @@ void config_save(const mqtt_config_t* config) {
     prefs.putString(PREF_KEY_DEVICE_ID, config->deviceId);
     
     prefs.end();
-    Serial.println("[Config] 配置保存完成");
+    Serial.println("[Config] MQTT 配置已保存");
+}
+
+/**
+ * @brief       清除 Flash 中保存的 MQTT 配置
+ * @param       无
+ * @retval      无
+ */
+void config_erase(void) {
+    if (!prefs.begin(PREF_NAMESPACE_MQTT, false)) {
+        Serial.println("[Config] 无法打开Preferences，清除失败");
+        return;
+    }
+    prefs.clear();
+    prefs.end();
+    Serial.println("[Config] 已清除Flash中的MQTT配置");
 }
 
 /**
@@ -109,7 +227,6 @@ void config_set_default(mqtt_config_t* config) {
     strncpy(config->username, DEFAULT_USERNAME, sizeof(config->username));
     strncpy(config->password, DEFAULT_PASSWORD, sizeof(config->password));
     strncpy(config->deviceId, DEFAULT_DEVICE_ID, sizeof(config->deviceId));
-    Serial.println("[Config] 已设置为默认配置");
 }
 
 /**
@@ -126,7 +243,34 @@ void config_print(const mqtt_config_t* config) {
     Serial.print("  用户名: ");
     Serial.println(config->username);
     Serial.print("  密码: ");
-    Serial.println(config->password);
+    //Serial.println(config->password);
     Serial.print("  设备ID: ");
     Serial.println(config->deviceId);
+}
+
+/**
+ * @brief       检查 MQTT 配置是否有效
+ * @param       config: 配置结构体指针
+ * @retval      true: 有效，false: 无效
+ */
+bool config_is_valid(const mqtt_config_t* config) {
+    return (config->server[0] != '\0' && config->port > 0);
+}
+
+/**
+ * @brief       获取全局 WiFi 配置
+ * @param       无
+ * @retval      WiFi 配置指针
+ */
+AppWifiConfig* get_wifi_config(void) {
+    return &g_wifi_config;
+}
+
+/**
+ * @brief       获取全局 MQTT 配置
+ * @param       无
+ * @retval      MQTT 配置指针
+ */
+mqtt_config_t* get_mqtt_config(void) {
+    return &g_mqtt_config;
 }

@@ -7,9 +7,17 @@
 #define CONFIG_MAX_SERVER_LEN     64
 #define CONFIG_MAX_USERNAME_LEN   32
 #define CONFIG_MAX_PASSWORD_LEN   32
-#define CONFIG_MAX_DEVICE_ID_LEN  32
+#define CONFIG_MAX_DEVICE_ID_LEN 32
+#define CONFIG_MAX_WIFI_SSID_LEN 32
+#define CONFIG_MAX_WIFI_PASS_LEN 32
 
-/* 配置结构体 */
+/* WiFi 配置结构体 */
+typedef struct {
+    char ssid[CONFIG_MAX_WIFI_SSID_LEN];
+    char password[CONFIG_MAX_WIFI_PASS_LEN];
+} AppWifiConfig;
+
+/* MQTT 配置结构体 */
 typedef struct {
     char server[CONFIG_MAX_SERVER_LEN];
     uint16_t port;
@@ -18,11 +26,25 @@ typedef struct {
     char deviceId[CONFIG_MAX_DEVICE_ID_LEN];
 } mqtt_config_t;
 
-/* 函数声明 */
+/* WiFi 配置函数 */
+void wifi_config_load(AppWifiConfig* config);
+void wifi_config_save(const AppWifiConfig* config);
+void wifi_config_erase(void);
+void wifi_config_set_default(AppWifiConfig* config);
+void wifi_config_print(const AppWifiConfig* config);
+bool wifi_config_is_valid(const AppWifiConfig* config);
+
+/* 获取全局配置 */
+AppWifiConfig* get_wifi_config(void);
+
+/* MQTT 配置函数 */
 void config_init(void);
 void config_load(mqtt_config_t* config);
 void config_save(const mqtt_config_t* config);
+void config_erase(void);
 void config_set_default(mqtt_config_t* config);
 void config_print(const mqtt_config_t* config);
+bool config_is_valid(const mqtt_config_t* config);
+mqtt_config_t* get_mqtt_config(void);
 
 #endif /* __CONFIG_H__ */

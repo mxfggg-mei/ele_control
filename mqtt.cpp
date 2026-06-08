@@ -25,7 +25,8 @@ static char mqttTopicCommand[64];
 
 /* 当前使用的配置 */
 static mqtt_config_t currentMqttConfig;
-static bool configLoaded = false;
+/* 调试开关 */
+bool mqtt_debug_enabled = false;  /* 默认关闭 */
 
 /* 连接状态 */
 static bool mqttConnected = false;
@@ -40,14 +41,16 @@ static unsigned long mqttLastPublishTime = 0;  /* 上次上报时间 */
  */
 void mqtt_on_connect(bool sessionPresent) {
     mqttConnected = true;
-    Serial.println("[MQTT] 连接成功");
+    if (mqtt_debug_enabled) Serial.println("[MQTT] 连接成功");
     
     // 订阅命令 Topic
     if (mqttClient.subscribe(mqttTopicCommand)) {
-        Serial.print("[MQTT] 已订阅: ");
-        Serial.println(mqttTopicCommand);
+        if (mqtt_debug_enabled) {
+            Serial.print("[MQTT] 已订阅: ");
+            Serial.println(mqttTopicCommand);
+        }
     } else {
-        Serial.println("[MQTT] 订阅失败");
+        if (mqtt_debug_enabled) Serial.println("[MQTT] 订阅失败");
     }
 }
 
@@ -58,7 +61,7 @@ void mqtt_on_connect(bool sessionPresent) {
  */
 void mqtt_on_disconnect(WiFiClient *client, char *topic, byte *payload, unsigned int length) {
     mqttConnected = false;
-    Serial.println("[MQTT] 连接断开");
+    if (mqtt_debug_enabled) Serial.println("[MQTT] 连接断开");
 }
 
 /**
@@ -69,30 +72,34 @@ void mqtt_on_disconnect(WiFiClient *client, char *topic, byte *payload, unsigned
  * @retval      无
  */
 void mqtt_on_message(char* topic, byte* payload, unsigned int length) {
-    Serial.print("[MQTT] 收到消息: ");
-    Serial.print(topic);
-    Serial.print(" -> ");
-    
-    // 打印消息内容
-    for (unsigned int i = 0; i < length; i++) {
-        Serial.print((char)payload[i]);
+    if (mqtt_debug_enabled) {
+        Serial.print("[MQTT] 收到消息: ");
+        Serial.print(topic);
+        Serial.print(" -> ");
+        
+        // 打印消息内容
+        for (unsigned int i = 0; i < length; i++) {
+            Serial.print((char)payload[i]);
+        }
+        Serial.println();
     }
-    Serial.println();
     
     // 解析 JSON
     StaticJsonDocument<256> doc;
     DeserializationError error = deserializeJson(doc, payload, length);
     
     if (error) {
-        Serial.print("[MQTT] JSON 解析失败: ");
-        Serial.println(error.f_str());
+        if (mqtt_debug_enabled) {
+            Serial.print("[MQTT] JSON 解析失败: ");
+            Serial.println(error.f_str());
+        }
         return;
     }
     
     // 获取命令
     const char* cmd = doc["cmd"];
     if (!cmd) {
-        Serial.println("[MQTT] 缺少 cmd 字段");
+        if (mqtt_debug_enabled) Serial.println("[MQTT] 缺少 cmd 字段");
         return;
     }
     
@@ -101,48 +108,56 @@ void mqtt_on_message(char* topic, byte* payload, unsigned int length) {
         int relay = doc["relay"];
         bool value = doc["value"];
         
-        Serial.print("[MQTT] 命令: set_relay, relay: ");
-        Serial.print(relay);
-        Serial.print(", value: ");
-        Serial.println(value);
+        if (mqtt_debug_enabled) {
+            Serial.print("[MQTT] 命令: set_relay, relay: ");
+            Serial.print(relay);
+            Serial.print(", value: ");
+            Serial.println(value);
+        }
         
         // 受 KEY1 约束
         if (key1_is_on()) {
             if (relay == 3) {
                 lightEnabled = value;
-                Serial.print("[MQTT] 设置继电器3(LED): ");
-                Serial.println(value ? "ON" : "OFF");
+                if (mqtt_debug_enabled) {
+                    Serial.print("[MQTT] 设置继电器3(LED): ");
+                    Serial.println(value ? "ON" : "OFF");
+                }
             } else if (relay == 4) {
                 fanEnabled = value;
-                Serial.print("[MQTT] 设置继电器4(FAN): ");
-                Serial.println(value ? "ON" : "OFF");
+                if (mqtt_debug_enabled) {
+                    Serial.print("[MQTT] 设置继电器4(FAN): ");
+                    Serial.println(value ? "ON" : "OFF");
+                }
             }
             mqtt_publish_status();  // 立即上报新状态
         } else {
-            Serial.println("[MQTT] 继电器控制无效 - 总闸已关闭");
+            if (mqtt_debug_enabled) Serial.println("[MQTT] 继电器控制无效 - 总闸已关闭");
         }
         
     } else if (strcmp(cmd, MQTT_CMD_SET_MODE) == 0) {
         const char* mode = doc["mode"];
         
-        Serial.print("[MQTT] 命令: set_mode, mode: ");
-        Serial.println(mode);
+        if (mqtt_debug_enabled) {
+            Serial.print("[MQTT] 命令: set_mode, mode: ");
+            Serial.println(mode);
+        }
         
         if (strcmp(mode, "auto") == 0) {
             g_autoMode = true;
-            Serial.println("[MQTT] 切换到自动模式");
+            if (mqtt_debug_enabled) Serial.println("[MQTT] 切换到自动模式");
         } else if (strcmp(mode, "manual") == 0) {
             g_autoMode = false;
-            Serial.println("[MQTT] 切换到手动模式");
+            if (mqtt_debug_enabled) Serial.println("[MQTT] 切换到手动模式");
         }
         mqtt_publish_status();  // 立即上报新状态
         
     } else if (strcmp(cmd, MQTT_CMD_GET_STATUS) == 0) {
-        Serial.println("[MQTT] 命令: get_status");
+        if (mqtt_debug_enabled) Serial.println("[MQTT] 命令: get_status");
         // 检查最近是否主动上报过（5秒内）
         unsigned long currentMillis = millis();
         if (mqttRecentlyPublished && (currentMillis - mqttLastPublishTime < 5000)) {
-            Serial.println("[MQTT] 最近已主动上报，跳过应答");
+            if (mqtt_debug_enabled) Serial.println("[MQTT] 最近已主动上报，跳过应答");
         } else {
             mqtt_publish_status();  // 立即上报状态
         }
@@ -151,10 +166,12 @@ void mqtt_on_message(char* topic, byte* payload, unsigned int length) {
         float temp = doc["temp"];
         float light = doc["light"];
         
-        Serial.print("[MQTT] 命令: set_threshold, temp: ");
-        Serial.print(temp);
-        Serial.print(", light: ");
-        Serial.println(light);
+        if (mqtt_debug_enabled) {
+            Serial.print("[MQTT] 命令: set_threshold, temp: ");
+            Serial.print(temp);
+            Serial.print(", light: ");
+            Serial.println(light);
+        }
         
         if (temp > 0) {
             tempThreshold = temp;
@@ -165,13 +182,15 @@ void mqtt_on_message(char* topic, byte* payload, unsigned int length) {
         mqtt_publish_status();  // 立即上报新状态
         
     } else if (strcmp(cmd, MQTT_CMD_REBOOT) == 0) {
-        Serial.println("[MQTT] 命令: reboot - 即将重启设备");
+        if (mqtt_debug_enabled) Serial.println("[MQTT] 命令: reboot - 即将重启设备");
         delay(100);
         ESP.restart();
         
     } else {
-        Serial.print("[MQTT] 未知命令: ");
-        Serial.println(cmd);
+        if (mqtt_debug_enabled) {
+            Serial.print("[MQTT] 未知命令: ");
+            Serial.println(cmd);
+        }
     }
 }
 
@@ -181,8 +200,8 @@ void mqtt_on_message(char* topic, byte* payload, unsigned int length) {
  * @retval      无
  */
 void mqtt_init(void) {
-    config_load(&currentMqttConfig);
-    configLoaded = true;
+    // 从已加载的全局配置拷贝，避免重复读取 Flash
+    memcpy(&currentMqttConfig, get_mqtt_config(), sizeof(mqtt_config_t));
     
     mqttClient.setServer(currentMqttConfig.server, currentMqttConfig.port);
     mqttClient.setCallback(mqtt_on_message);
@@ -194,8 +213,10 @@ void mqtt_init(void) {
     
     Serial.print("[MQTT] 状态 Topic: ");
     Serial.println(mqttTopicStatus);
-    Serial.print("[MQTT] 命令 Topic: ");
-    Serial.println(mqttTopicCommand);
+    if (mqtt_debug_enabled) {
+        Serial.print("[MQTT] 命令 Topic: ");
+        Serial.println(mqttTopicCommand);
+    }
 }
 
 /**
@@ -208,22 +229,33 @@ void mqtt_connect(void) {
         return;
     }
     
-    Serial.print("[MQTT] 正在连接...");
+    // 检查 MQTT 配置是否有效
+    if (currentMqttConfig.server[0] == '\0' || currentMqttConfig.port == 0) {
+        if (mqtt_debug_enabled) Serial.println("[MQTT] 未配置，跳过连接（使用 'mqtt set server/port' 配置）");
+        return;
+    }
     
-    const char* deviceId = configLoaded ? currentMqttConfig.deviceId : DEVICE_ID;
-    const char* username = configLoaded ? currentMqttConfig.username : MQTT_USERNAME;
-    const char* password = configLoaded ? currentMqttConfig.password : MQTT_PASSWORD;
+    if (mqtt_debug_enabled) Serial.print("[MQTT] 正在连接...");
+    
+    const char* deviceId = currentMqttConfig.deviceId;
+    const char* username = currentMqttConfig.username;
+    const char* password = currentMqttConfig.password;
     
     if (mqttClient.connect(deviceId, username, password)) {
         mqttConnected = true;
-        Serial.println("成功");
+        Serial.println("[MQTT] 连接成功");
+        
+        // 连接成功自动保存 MQTT 配置到 Flash
+        config_save(&currentMqttConfig);
         
         // 订阅命令 Topic
         mqttClient.subscribe(mqttTopicCommand);
-        Serial.print("[MQTT] 已订阅: ");
-        Serial.println(mqttTopicCommand);
+        if (mqtt_debug_enabled) {
+            Serial.print("[MQTT] 已订阅: ");
+            Serial.println(mqttTopicCommand);
+        }
     } else {
-        Serial.print("失败，错误码: ");
+        Serial.print("[MQTT] 连接失败，错误码: ");
         Serial.println(mqttClient.state());
         mqttConnected = false;
     }
@@ -288,8 +320,10 @@ void mqtt_publish_status(void) {
     doc["light_threshold"] = lightThreshold;
     doc["mode"] = g_autoMode ? "auto" : "manual";
     doc["key1_lock"] = key1_is_on();
-    doc["relay3"] = lightEnabled;
-    doc["relay4"] = fanEnabled;
+    // 上报实际输出状态（受总闸约束）
+    bool key1On = key1_is_on();
+    doc["relay3"] = key1On && lightEnabled;
+    doc["relay4"] = key1On && fanEnabled;
     
     // 序列化 JSON
     char payload[256];
@@ -297,13 +331,15 @@ void mqtt_publish_status(void) {
     
     // 发布消息
     if (mqttClient.publish(mqttTopicStatus, payload)) {
-        Serial.print("[MQTT] 发布状态: ");
-        Serial.println(payload);
+        if (mqtt_debug_enabled) {
+            Serial.print("[MQTT] 发布状态: ");
+            Serial.println(payload);
+        }
         // 记录上报时间和标志
         mqttLastPublishTime = millis();
         mqttRecentlyPublished = true;
     } else {
-        Serial.println("[MQTT] 发布失败");
+        if (mqtt_debug_enabled) Serial.println("[MQTT] 发布失败");
     }
 }
 /**
@@ -337,11 +373,11 @@ void mqtt_request_publish(void) {
  */
 void mqtt_reconnect_with_config(const mqtt_config_t* config) {
     if (config == NULL) {
-        Serial.println("[MQTT] 错误: 配置指针为空");
+        if (mqtt_debug_enabled) Serial.println("[MQTT] 错误: 配置指针为空");
         return;
     }
     
-    Serial.println("[MQTT] 正在使用新配置重新连接...");
+    if (mqtt_debug_enabled) Serial.println("[MQTT] 正在使用新配置重新连接...");
     
     memcpy(&currentMqttConfig, config, sizeof(mqtt_config_t));
     
@@ -354,10 +390,23 @@ void mqtt_reconnect_with_config(const mqtt_config_t* config) {
     snprintf(mqttTopicCommand, sizeof(mqttTopicCommand), 
              "%s%s%s", MQTT_TOPIC_COMMAND_PREFIX, currentMqttConfig.deviceId, MQTT_TOPIC_COMMAND_SUFFIX);
     
-    Serial.print("[MQTT] 新状态 Topic: ");
-    Serial.println(mqttTopicStatus);
-    Serial.print("[MQTT] 新命令 Topic: ");
-    Serial.println(mqttTopicCommand);
+    if (mqtt_debug_enabled) {
+        Serial.print("[MQTT] 新状态 Topic: ");
+        Serial.println(mqttTopicStatus);
+        Serial.print("[MQTT] 新命令 Topic: ");
+        Serial.println(mqttTopicCommand);
+    }
     
     mqtt_connect();
+}
+
+/**
+ * @brief       重置MQTT配置并断开连接（重置内部配置为默认值，阻止自动重连）
+ * @param       无
+ * @retval      无
+ */
+void mqtt_reset(void) {
+    config_set_default(&currentMqttConfig);
+    mqttClient.disconnect();
+    if (mqtt_debug_enabled) Serial.println("[MQTT] 配置已重置，已断开连接");
 }
