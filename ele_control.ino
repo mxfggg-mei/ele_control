@@ -17,17 +17,8 @@
 #include "version.h"
 #include "config.h"
 #include "serial_cmd.h"
+#include "oled.h"
 #include <WiFi.h>  // 确保已安装 ESP32 开发板支持包
-#include <U8g2lib.h>
-#include <Wire.h>
-
-// 自定义 SDA 和 SCL 引脚
-#define I2C_SDA  4  // 自定义 SDA 引脚
-#define I2C_SCL  5  // 自定义 SCL 引脚
-
-// 使用软件 I2C - SH1106 驱动（兼容 SH1116，需要手动偏移）
-U8G2_SH1106_128X64_VCOMH0_F_SW_I2C u8g2(U8G2_R0, /* clock=*/ I2C_SCL, /* data=*/ I2C_SDA, /* reset=*/ U8X8_PIN_NONE);
-#define OLED_OFFSET 4  // SH1116 屏幕需要 4 像素水平偏移
 
 /* ==================== 调试开关 ==================== */
 #define DEBUG_ENABLE  1
@@ -49,18 +40,7 @@ const unsigned long HEARTBEAT_INTERVAL = 10000;    // 心跳打印间隔(ms)
 const unsigned long KEY_BLINK_INTERVAL = 200;     // 按键长按LED闪烁间隔(ms)
 const long SERIAL_BAUD_RATE = 115200;             // 串口波特率
 
-/* 自动控制迟滞（避免临界值附近频繁开关） */
-#define TEMP_HYSTERESIS  0.5f   // 温度迟滞（℃）：温度高于 阈值+迟滞 开风扇，低于 阈值-迟滞 关风扇
-#define LIGHT_HYSTERESIS 10.0f  // 光照迟滞（lux）：光照低于 阈值-迟滞 开灯，高于 阈值+迟滞 关灯
-
 /* ==================== 状态变量 ==================== */
-enum WiFiState {
-    WIFI_IDLE,
-    WIFI_CONNECTING,
-    WIFI_CONNECTED,
-    WIFI_DISCONNECTED
-};
-
 WiFiState wifiState = WIFI_IDLE;
 uint8_t connectAttempt = 0;
 unsigned long lastHeartbeatMillis = 0;
@@ -74,7 +54,7 @@ bool g_autoMode = true;  // 默认自动模式，由 KEY2 长按切换
 /* 继电器状态循环控制变量 */
 uint8_t g_relayState = 0;  // 0:00  1:01  2:10  3:11
 
-/* 继电器状态映射表 [bit0=LED, bit1=FAN] */
+/* 继电器状态映射表和名称表定义（声明在 led.h） */
 const uint8_t RELAY_STATE_TABLE[4] = {
     0b00,  // 状态0: LED=OFF, FAN=OFF
     0b01,  // 状态1: LED=ON,  FAN=OFF
@@ -82,7 +62,6 @@ const uint8_t RELAY_STATE_TABLE[4] = {
     0b11   // 状态3: LED=ON,  FAN=ON
 };
 
-/* 继电器状态名称表 */
 const char* RELAY_STATE_NAME[4] = {
     "00 - LED:OFF  FAN:OFF",
     "01 - LED:ON   FAN:OFF",
@@ -97,10 +76,6 @@ float tempThreshold = 28.0;     // 温度阈值（℃），超过此值打开风
 /* ==================== 按键相关变量 ==================== */
 bool keyLongPressBlink = false;
 unsigned long lastKeyBlinkMillis = 0;
-
-/* ==================== OLED 显示相关变量 ==================== */
-const unsigned long OLED_UPDATE_INTERVAL = 100;  // OLED 刷新间隔 (ms)
-bool g_forceOledUpdate = false;  // 全局强制更新标志
 
 /* ==================== 传感器读取相关变量 ==================== */
 unsigned long lastAdcReadMillis = 0;
@@ -119,8 +94,6 @@ void continueWiFiConnection(void);
 void handleWiFiConnected(void);
 void handleWiFiDisconnected(void);
 void handleKeyEvent(void);
-
-void updateOledDisplay(void);
 
 /**
  * @brief    WiFi事件回调函数
@@ -305,10 +278,8 @@ void setup() {
     startWiFiConnection();
     mqtt_init();
 
-    u8g2.begin();
-    u8g2.enableUTF8Print();
-    u8g2.setContrast(0x60);  // SH1116 最佳对比度设置（0x00-0xFF）
-    u8g2.setPowerSave(0);    // 开启显示
+    // 初始化 OLED 显示（包含开机画面）
+    oled_init();
     
     // 初始化温度传感器
     temp_init();
@@ -322,24 +293,6 @@ void setup() {
     
     // RGB 灯测试：启动多色快闪（红→绿→蓝→白）
     rgb_boot_flash();
-    
-    /* 开机画面 */
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_wqy12_t_gb2312);
-    
-    u8g2.setCursor(OLED_OFFSET + 0, 16);
-    u8g2.print("欢迎使用化工智能控制");
-    
-    u8g2.setCursor(OLED_OFFSET, 36);
-    u8g2.print("ID:");
-    u8g2.print(get_mqtt_config()->deviceId);
-    
-    u8g2.setCursor(OLED_OFFSET, 56);
-    u8g2.print("V");
-    u8g2.print(VERSION);
-    
-    u8g2.sendBuffer();
-    delay(200);  // 开机画面短暂显示200ms后立刻进入主循环
 }
 
 /**
@@ -403,7 +356,7 @@ void loop() {
             Serial.print(" ℃ → FAN: ");
             Serial.println(fanEnabled ? "ON" : "OFF");
             
-            setOledForceUpdate();  // 强制更新 OLED
+            oled_force_update();  // 强制更新 OLED
             mqtt_request_publish();  // 立即上报状态
         }
     }
@@ -417,7 +370,7 @@ void loop() {
     /* RGB 状态由独立后台任务 rgbTask 自动更新，此处不再调用 */
     
     /* 更新 OLED 显示 */
-    updateOledDisplay();
+    oled_update();
 }
 
 /**
@@ -447,7 +400,7 @@ void handleKeyEvent(void) {
             LED(LOW);
             FAN(LOW);
         }
-        setOledForceUpdate();  // 立即更新 OLED
+        oled_force_update();  // 立即更新 OLED
         mqtt_request_publish();  // 立即上报状态
     }
     
@@ -480,7 +433,7 @@ void handleKeyEvent(void) {
                         Serial.println(RELAY_STATE_NAME[g_relayState]);
                         
                         param_save();   // 保存继电器状态
-                        setOledForceUpdate();
+                        oled_force_update();
                         mqtt_request_publish();
                     } else {
                         Serial.println("[Key2] 短按无效 - 总闸已关闭");
@@ -512,74 +465,8 @@ void handleKeyEvent(void) {
         }
         
         /* 设置强制更新标志，让 OLED 立即刷新 */
-        setOledForceUpdate();
+        oled_force_update();
     }
 }
 
-/**
- * @brief    设置 OLED 强制更新标志
- * @param    无
- * @retval   无
- */
-void setOledForceUpdate(void) {
-    g_forceOledUpdate = true;  // 设置强制更新标志
-}
 
-/**
- * @brief    更新 OLED 显示内容
- * @param    无
- * @retval   无
- * @note     显示四行信息：模式/总闸、光照、温度、设备状态
- */
-void updateOledDisplay(void) {
-    static unsigned long lastUpdateMillis = 0;
-    unsigned long currentMillis = millis();
-    
-    // 检查是否需要强制更新（通过全局标志）
-    if (!g_forceOledUpdate && (currentMillis - lastUpdateMillis < OLED_UPDATE_INTERVAL)) {
-        return;
-    }
-    
-    g_forceOledUpdate = false;  // 重置强制更新标志
-    lastUpdateMillis = currentMillis;
-    
-    u8g2.clearBuffer();
-    
-    // 使用支持中英文混合的字体
-    u8g2.setFont(u8g2_font_wqy12_t_gb2312);  // 12px GB2312字体
-    
-    char buffer[64];
-    
-    // ===== 第 1 行：WiFi 和 MQTT 状态 =====
-    u8g2.setCursor(OLED_OFFSET, 11);
-    snprintf(buffer, sizeof(buffer), "WiFi: %s  MQTT: %s", 
-             (wifiState == WIFI_CONNECTED) ? "√" : "\u00D7",
-             mqtt_is_connected() ? "\u221A" : "\u00D7");
-    u8g2.print(buffer);
-    // ===== 第 2 行：模式:自动/手动  主:开/关 =====
-    u8g2.setCursor(OLED_OFFSET, 24);
-    snprintf(buffer, sizeof(buffer), "模式: %s  总闸: %s", 
-             g_autoMode ? "自动" : "手动",
-             key1_is_on() ? "开" : "关");
-    u8g2.print(buffer);
-    
-    // ===== 第 3 行：光:1234/300 =====
-    u8g2.setCursor(OLED_OFFSET, 37);
-    snprintf(buffer, sizeof(buffer), "光强: %.0f/%.0f", lightValue, lightThreshold);
-    u8g2.print(buffer);
-    
-    // ===== 第 4 行：温:25.5/28.0 =====
-    u8g2.setCursor(OLED_OFFSET, 50);
-    snprintf(buffer, sizeof(buffer), "温度: %.1f/%.1f", g_temperature, tempThreshold);
-    u8g2.print(buffer);
-    
-    // ===== 第 5 行：灯:开 风:关（受总闸控制） =====
-    u8g2.setCursor(OLED_OFFSET, 63);
-    bool key1State = key1_is_on();
-    snprintf(buffer, sizeof(buffer), "灯光: %s  风扇: %s", 
-             (key1State && lightEnabled) ? "开" : "关",
-             (key1State && fanEnabled) ? "开" : "关");
-    u8g2.print(buffer);
-    
-    u8g2.sendBuffer();
-}

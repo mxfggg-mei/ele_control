@@ -12,11 +12,8 @@
 #include "rgb.h"
 #include "mqtt.h"
 #include "key.h"
+#include "config.h"
 #include <WiFi.h>
-
-/* 外部变量声明（来自主控文件） */
-extern bool lightEnabled;
-extern bool fanEnabled;
 
 /* NeoPixel 对象 */
 static Adafruit_NeoPixel pixels(NUMPIXELS, RGB_LED_PIN, NEO_GRB + NEO_KHZ800);

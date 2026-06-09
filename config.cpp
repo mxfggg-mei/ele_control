@@ -232,12 +232,6 @@ void config_set_default(mqtt_config_t* config) {
 
 /* ==================== 工作参数持久化 ==================== */
 
-/* 外部工作变量 */
-extern bool g_autoMode;
-extern uint8_t g_relayState;
-extern float tempThreshold;
-extern float lightThreshold;
-
 /**
  * @brief       保存工作参数到 Flash
  * @param       无

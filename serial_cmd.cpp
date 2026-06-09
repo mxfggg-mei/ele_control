@@ -184,12 +184,10 @@ void handle_mqtt_command(const char* cmd) {
         Serial.println(currentMqttConfig.deviceId);
     }
     else if (strcmp(cmd, "mqtt debug on") == 0) {
-        extern bool mqtt_debug_enabled;
         mqtt_debug_enabled = true;
         Serial.println("[SerialCmd] MQTT调试信息已开启");
     }
     else if (strcmp(cmd, "mqtt debug off") == 0) {
-        extern bool mqtt_debug_enabled;
         mqtt_debug_enabled = false;
         Serial.println("[SerialCmd] MQTT调试信息已关闭");
     }

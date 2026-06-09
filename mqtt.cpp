@@ -5,15 +5,7 @@
 #include "version.h"
 #include "key.h"
 #include "config.h"
-
-/* 外部变量声明 */
-extern float g_temperature;
-extern float lightValue;
-extern bool g_autoMode;
-extern bool lightEnabled;
-extern bool fanEnabled;
-extern float tempThreshold;
-extern float lightThreshold;
+#include "temp.h"
 
 /* MQTT 客户端实例 */
 WiFiClient mqttWifiClient;

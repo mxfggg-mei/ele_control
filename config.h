@@ -3,6 +3,24 @@
 
 #include <Preferences.h>
 
+/* ==================== WiFi 状态枚举（全局共享） ==================== */
+enum WiFiState {
+    WIFI_IDLE,
+    WIFI_CONNECTING,
+    WIFI_CONNECTED,
+    WIFI_DISCONNECTED
+};
+
+/* ==================== 全局工作变量声明（所有模块共享） ==================== */
+extern WiFiState wifiState;
+extern bool  g_autoMode;
+extern uint8_t g_relayState;
+extern float lightValue;
+extern float lightThreshold;
+extern float tempThreshold;
+extern bool  lightEnabled;
+extern bool  fanEnabled;
+
 /* 配置参数最大长度 */
 #define CONFIG_MAX_SERVER_LEN     64
 #define CONFIG_MAX_USERNAME_LEN   32

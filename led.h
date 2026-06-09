@@ -36,6 +36,14 @@
 #define FAN_TOGGLE()  digitalWrite(FAN_PIN, !digitalRead(FAN_PIN))
 
 
+/* 自动控制迟滞（避免临界值附近频繁开关） */
+#define TEMP_HYSTERESIS  0.5f   /* 温度迟滞（℃）：温度高于 阈值+迟滞 开风扇，低于 阈值-迟滞 关风扇 */
+#define LIGHT_HYSTERESIS 10.0f  /* 光照迟滞（lux）：光照低于 阈值-迟滞 开灯，高于 阈值+迟滞 关灯 */
+
+/* 继电器状态循环表 [bit0=LED, bit1=FAN] */
+extern const uint8_t RELAY_STATE_TABLE[4];
+extern const char* RELAY_STATE_NAME[4];
+
 /* 函数声明 */
 void led_init(void);      /* led引脚初始化函数 */
 void fan_init(void);      /* fan引脚初始化函数 */
