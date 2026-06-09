@@ -11,6 +11,7 @@
 
 #include "rgb.h"
 #include "mqtt.h"
+#include "key.h"
 #include <WiFi.h>
 
 /* 外部变量声明（来自主控文件） */
@@ -149,6 +150,47 @@ static const rgb_step_t seq_temp_comm_both_down[] = {
     {RGB_PURPLE, 1400, RGB_STEP_FADE},
     {RGB_OFF, 1200, RGB_STEP_FADE},
     {RGB_RED, 100, RGB_STEP_SOLID},
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+};
+
+/* ==================== 总闸断开（呼吸+白灯闪三下） ==================== */
+
+/* 7. WiFi未连 + 总闸断开：红色呼吸 + 白灯闪三下 */
+static const rgb_step_t seq_sw_off_wifi_down[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_RED, 1200, RGB_STEP_FADE},       /* 渐红 1.2s */
+    {RGB_OFF, 1000, RGB_STEP_FADE},       /* 渐暗 1.0s */
+    {RGB_WHITE_HALF, 100, RGB_STEP_SOLID},     /* 白灯(半亮) 闪第1下 */
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+    {RGB_WHITE_HALF, 100, RGB_STEP_SOLID},     /* 白灯(半亮) 闪第2下 */
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+    {RGB_WHITE_HALF, 100, RGB_STEP_SOLID},     /* 白灯(半亮) 闪第3下 */
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+};
+
+/* 8. WiFi连MQTT未连 + 总闸断开：蓝色呼吸 + 白灯闪三下 */
+static const rgb_step_t seq_sw_off_mqtt_down[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_BLUE, 1200, RGB_STEP_FADE},      /* 渐蓝 1.2s */
+    {RGB_OFF, 1000, RGB_STEP_FADE},       /* 渐暗 1.0s */
+    {RGB_WHITE_HALF, 100, RGB_STEP_SOLID},     /* 白灯(半亮) 闪第1下 */
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+    {RGB_WHITE_HALF, 100, RGB_STEP_SOLID},     /* 白灯(半亮) 闪第2下 */
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+    {RGB_WHITE_HALF, 100, RGB_STEP_SOLID},     /* 白灯(半亮) 闪第3下 */
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+};
+
+/* 9. 总闸断开 + 一切正常：绿色呼吸 + 白灯闪三下 */
+static const rgb_step_t seq_sw_off_all_ok[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_GREEN, 1200, RGB_STEP_FADE},     /* 渐绿 1.2s */
+    {RGB_OFF, 1000, RGB_STEP_FADE},       /* 渐暗 1.0s */
+    {RGB_WHITE_HALF, 100, RGB_STEP_SOLID},     /* 白灯(半亮) 闪第1下 */
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+    {RGB_WHITE_HALF, 100, RGB_STEP_SOLID},     /* 白灯(半亮) 闪第2下 */
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+    {RGB_WHITE_HALF, 100, RGB_STEP_SOLID},     /* 白灯(半亮) 闪第3下 */
     {RGB_OFF, 100, RGB_STEP_SOLID},
 };
 
@@ -409,27 +451,56 @@ void rgb_update_by_state(wl_status_t wifi_status)
     }
 
     /* ==================== 非报警状态（呼吸灯驱动） ==================== */
-    if (!wifiOk) {
-        /* 4. WiFi断开（无报警）：红色呼吸 */
-        if (rgb_current_mode != RGB_MODE_BREATH || rgb_current_color != RGB_RED) {
-            rgb_set_mode(RGB_MODE_BREATH);
-            rgb_set_color(RGB_RED);
+    bool key1On = key1_is_on();
+
+    if (!key1On) {
+        /* 总闸断开：使用呼吸+白灯闪三下序列 */
+        if (!wifiOk) {
+            /* 7. WiFi未连 + 总闸断开：红色呼吸 + 白灯闪三下 */
+            if (rgb_current_mode != RGB_MODE_BREATH_SW_OFF) {
+                rgb_set_mode(RGB_MODE_BREATH_SW_OFF);
+                active_seq = NULL;// 重置序列指针，确保下一次序列播放
+            }
+            RUN_SEQ(seq_sw_off_wifi_down);
+        } else if (!mqttOk) {
+            /* 8. WiFi连MQTT未连 + 总闸断开：蓝色呼吸 + 白灯闪三下 */
+            if (rgb_current_mode != RGB_MODE_BREATH_SW_OFF) {
+                rgb_set_mode(RGB_MODE_BREATH_SW_OFF);//
+                active_seq = NULL;
+            }
+            RUN_SEQ(seq_sw_off_mqtt_down);
+        } else {
+            /* 9. 总闸断开 + 一切正常：绿色呼吸 + 白灯闪三下 */
+            if (rgb_current_mode != RGB_MODE_BREATH_SW_OFF) {
+                rgb_set_mode(RGB_MODE_BREATH_SW_OFF);
+                active_seq = NULL;
+            }
+            RUN_SEQ(seq_sw_off_all_ok);
         }
-        rgb_update();
-    } else if (!mqttOk) {
-        /* 5. WiFi连但MQTT未连（无报警）：蓝色呼吸 */
-        if (rgb_current_mode != RGB_MODE_BREATH || rgb_current_color != RGB_BLUE) {
-            rgb_set_mode(RGB_MODE_BREATH);
-            rgb_set_color(RGB_BLUE);
-        }
-        rgb_update();
     } else {
-        /* 6. 一切正常：绿色呼吸 */
-        if (rgb_current_mode != RGB_MODE_BREATH || rgb_current_color != RGB_GREEN) {
-            rgb_set_mode(RGB_MODE_BREATH);
-            rgb_set_color(RGB_GREEN);
+        /* 总闸闭合：原呼吸灯逻辑 */
+        if (!wifiOk) {
+            /* 4. WiFi断开（无报警）：红色呼吸 */
+            if (rgb_current_mode != RGB_MODE_BREATH || rgb_current_color != RGB_RED) {
+                rgb_set_mode(RGB_MODE_BREATH);
+                rgb_set_color(RGB_RED);
+            }
+            rgb_update();
+        } else if (!mqttOk) {
+            /* 5. WiFi连但MQTT未连（无报警）：蓝色呼吸 */
+            if (rgb_current_mode != RGB_MODE_BREATH || rgb_current_color != RGB_BLUE) {
+                rgb_set_mode(RGB_MODE_BREATH);
+                rgb_set_color(RGB_BLUE);
+            }
+            rgb_update();
+        } else {
+            /* 6. 一切正常：绿色呼吸 */
+            if (rgb_current_mode != RGB_MODE_BREATH || rgb_current_color != RGB_GREEN) {
+                rgb_set_mode(RGB_MODE_BREATH);
+                rgb_set_color(RGB_GREEN);
+            }
+            rgb_update();
         }
-        rgb_update();
     }
 
 #undef RUN_SEQ

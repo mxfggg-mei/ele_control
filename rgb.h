@@ -29,6 +29,7 @@
 #define RGB_PURPLE     0xFF00FF
 #define RGB_CYAN       0x00FFFF
 #define RGB_WHITE      0xFFFFFF
+#define RGB_WHITE_HALF 0x7F7F7F  /* 一半亮度白灯 */
 #define RGB_OFF        0x000000
 
 /* 旧模式（保持兼容） */
@@ -41,6 +42,7 @@
 #define RGB_MODE_ALARM_LED_FAN  10  /* 严重报警紫橙闪烁（LED灯+风扇同时启动） */
 #define RGB_MODE_ALARM_LIGHT   11  /* 光照越界报警（橙色呼吸+通讯指示） */
 #define RGB_MODE_ALARM_TEMP    12  /* 温度越界报警（紫色呼吸+通讯指示） */
+#define RGB_MODE_BREATH_SW_OFF 13  /* 总闸断开呼吸（红色/蓝色呼吸+白灯闪三下） */
 
 /* 步骤类型 */
 #define RGB_STEP_SOLID  0   /* 直接设置颜色并保持 */

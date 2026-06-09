@@ -60,6 +60,10 @@ void serial_cmd_print_help(void) {
     Serial.println("mqtt reconnect           - 使用新配置重新连接MQTT");
     Serial.println("mqtt debug <on|off>     - 开启/关闭MQTT调试信息");
     Serial.println("");
+    Serial.println("=== 设备配置命令 ===");
+    Serial.println("device show              - 显示当前设备ID");
+    Serial.println("device set id <id>      - 设置设备ID（自动保存到Flash）");
+    Serial.println("");
     Serial.println("=== 系统命令 ===");
     Serial.println("help                     - 显示帮助信息");
     Serial.println("show all                 - 显示所有配置");
@@ -195,6 +199,36 @@ void handle_mqtt_command(const char* cmd) {
 }
 
 /**
+ * @brief       处理设备 ID 命令
+ * @param       cmd: 命令字符串
+ * @retval      无
+ */
+void handle_device_command(const char* cmd) {
+    if (strcmp(cmd, "device show") == 0) {
+        Serial.print("[Device] 当前设备ID: ");
+        Serial.println(currentMqttConfig.deviceId);
+    }
+    else if (strncmp(cmd, "device set id ", 14) == 0) {
+        const char* id = cmd + 14;
+        if (strlen(id) == 0) {
+            Serial.println("[Device] 错误: 设备ID不能为空");
+            return;
+        }
+        strncpy(currentMqttConfig.deviceId, id, sizeof(currentMqttConfig.deviceId) - 1);
+        currentMqttConfig.deviceId[sizeof(currentMqttConfig.deviceId) - 1] = '\0';
+        // 同步到全局配置并保存到 Flash
+        memcpy(get_mqtt_config(), &currentMqttConfig, sizeof(mqtt_config_t));
+        config_save(&currentMqttConfig);
+        Serial.print("[Device] 设备ID已设置为: ");
+        Serial.println(currentMqttConfig.deviceId);
+        Serial.println("[Device] 已保存到 Flash，重启后生效");
+    }
+    else {
+        Serial.println("[SerialCmd] 未知device命令，输入 'help' 查看帮助");
+    }
+}
+
+/**
  * @brief       处理单条命令
  * @param       cmd: 命令字符串
  * @retval      无
@@ -229,6 +263,9 @@ void process_single_command(const char* cmd) {
     }
     else if (strncmp(cmd, "mqtt ", 5) == 0) {
         handle_mqtt_command(cmd);
+    }
+    else if (strncmp(cmd, "device ", 7) == 0) {
+        handle_device_command(cmd);
     }
     else if (strcmp(cmd, "reboot") == 0) {
         Serial.println("[System] 正在重启...");

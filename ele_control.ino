@@ -332,7 +332,7 @@ void setup() {
     
     u8g2.setCursor(OLED_OFFSET, 36);
     u8g2.print("ID:");
-    u8g2.print(DEVICE_ID);
+    u8g2.print(get_mqtt_config()->deviceId);
     
     u8g2.setCursor(OLED_OFFSET, 56);
     u8g2.print("V");
