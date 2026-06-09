@@ -295,6 +295,12 @@ void setup() {
         lightEnabled = (stateBits & 0b01) != 0;
         fanEnabled   = (stateBits & 0b10) != 0;
     }
+    // 手动模式下，上电不自动打开灯和风扇，强制全关
+    if (!g_autoMode) {
+        g_relayState = 0;
+        lightEnabled = false;
+        fanEnabled   = false;
+    }
     serial_cmd_init();
     startWiFiConnection();
     mqtt_init();
@@ -307,6 +313,9 @@ void setup() {
     // 初始化温度传感器
     temp_init();
     temp_task_create();  // 创建后台温度轮询任务
+    
+    // 创建 RGB 灯控后台任务（独立任务驱动呼吸灯）
+    rgb_task_create();
     
     // 初始化 ADC
     adc_init();
@@ -345,9 +354,6 @@ void loop() {
     updateLedState();
     handleWiFiDisconnected();
     serial_cmd_process();
-    
-    /* 缓存 WiFi 状态（避免 loop 内多次调用 WiFi.status() 导致延迟） */
-    wl_status_t wifiStatus = WiFi.status();
     
     if (wifiState == WIFI_CONNECTED) {
         if (currentMillis - lastHeartbeatMillis >= HEARTBEAT_INTERVAL) {
@@ -408,8 +414,7 @@ void loop() {
     /* MQTT 循环处理 */
     mqtt_loop();
     
-    /* 更新 RGB 状态（自动根据设备状态选择灯效） */
-    rgb_update_by_state(wifiStatus);
+    /* RGB 状态由独立后台任务 rgbTask 自动更新，此处不再调用 */
     
     /* 更新 OLED 显示 */
     updateOledDisplay();

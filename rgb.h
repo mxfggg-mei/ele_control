@@ -39,6 +39,8 @@
 
 /* 新模式 */
 #define RGB_MODE_ALARM_LED_FAN  10  /* 严重报警紫橙闪烁（LED灯+风扇同时启动） */
+#define RGB_MODE_ALARM_LIGHT   11  /* 光照越界报警（橙色呼吸+通讯指示） */
+#define RGB_MODE_ALARM_TEMP    12  /* 温度越界报警（紫色呼吸+通讯指示） */
 
 /* 步骤类型 */
 #define RGB_STEP_SOLID  0   /* 直接设置颜色并保持 */
@@ -58,10 +60,9 @@ void rgb_set_rgb(uint8_t r, uint8_t g, uint8_t b);
 void rgb_off(void);
 void rgb_boot_flash(void);                   /* 启动多色快闪（阻塞，在 setup 中调用） */
 void rgb_breath(uint32_t color, uint8_t brightness);  /* 阻塞版本，仅用于测试 */
-
-/* 非阻塞控制函数 */
 void rgb_update(void);               /* 更新 RGB 状态（在 loop 中调用） */
 void rgb_set_mode(uint8_t mode);     /* 设置模式 */
 void rgb_update_by_state(wl_status_t wifi_status);  /* 根据设备状态自动选择模式并更新 */
+void rgb_task_create(void);          /* 创建 RGB 灯控后台任务（在 setup 中调用） */
 
 #endif /* __RGB_H */

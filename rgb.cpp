@@ -31,13 +31,125 @@ static uint8_t seq_step_index = 0;       /* 当前步骤索引 */
 static unsigned long seq_step_start = 0;  /* 当前步骤开始时间(ms) */
 static uint32_t seq_fade_start_color = 0; /* 渐变起始颜色 */
 
+/* 当前激活的序列指针（用于检测序列变化时自动重置状态） */
+static const rgb_step_t* active_seq = NULL;
+
 /* ==================== 序列定义 ==================== */
 
-/* 1. 严重报警：紫橙交替闪烁 */
-/* PURPLE(200) → ORANGE(200) */
-static const rgb_step_t seq_alarm_flash[] = {
-    {RGB_PURPLE, 200, RGB_STEP_SOLID},
-    {RGB_ORANGE, 200, RGB_STEP_SOLID},
+/* ==================== 严重报警（紫呼吸+橙呼吸循环） ==================== */
+
+/* 无通讯指示 */
+static const rgb_step_t seq_critical_alarm[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_PURPLE, 1400, RGB_STEP_FADE},   /* 渐紫 1.4s */
+    {RGB_OFF, 1400, RGB_STEP_FADE},      /* 渐暗 1.4s */
+    {RGB_ORANGE, 1400, RGB_STEP_FADE},   /* 渐橙 1.4s */
+    {RGB_OFF, 1400, RGB_STEP_FADE},      /* 渐暗 1.4s */
+};
+
+/* WiFi+MQTT正常 → 加绿灯闪烁 */
+static const rgb_step_t seq_critical_comm_ok[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_PURPLE, 1200, RGB_STEP_FADE},
+    {RGB_OFF, 1200, RGB_STEP_FADE},
+    {RGB_ORANGE, 1200, RGB_STEP_FADE},
+    {RGB_OFF, 1000, RGB_STEP_FADE},
+    {RGB_GREEN, 100, RGB_STEP_SOLID},
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+};
+
+/* WiFi正常MQTT异常 → 加蓝灯闪烁 */
+static const rgb_step_t seq_critical_comm_mqtt_down[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_PURPLE, 1200, RGB_STEP_FADE},
+    {RGB_OFF, 1200, RGB_STEP_FADE},
+    {RGB_ORANGE, 1200, RGB_STEP_FADE},
+    {RGB_OFF, 1000, RGB_STEP_FADE},
+    {RGB_BLUE, 100, RGB_STEP_SOLID},
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+};
+
+/* WiFi异常MQTT异常 → 加红灯闪烁 */
+static const rgb_step_t seq_critical_comm_both_down[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_PURPLE, 1200, RGB_STEP_FADE},
+    {RGB_OFF, 1200, RGB_STEP_FADE},
+    {RGB_ORANGE, 1200, RGB_STEP_FADE},
+    {RGB_OFF, 1000, RGB_STEP_FADE},
+    {RGB_RED, 100, RGB_STEP_SOLID},
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+};
+
+/* ==================== 光照越界（橙色呼吸） ==================== */
+
+/* 无通讯指示 */
+static const rgb_step_t seq_light_alarm[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_ORANGE, 1400, RGB_STEP_FADE},
+    {RGB_OFF, 1400, RGB_STEP_FADE},
+};
+
+/* WiFi+MQTT正常 → 加绿灯闪烁 */
+static const rgb_step_t seq_light_comm_ok[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_ORANGE, 1400, RGB_STEP_FADE},
+    {RGB_OFF, 1200, RGB_STEP_FADE},
+    {RGB_GREEN, 100, RGB_STEP_SOLID},
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+};
+
+/* WiFi正常MQTT异常 → 加蓝灯闪烁 */
+static const rgb_step_t seq_light_comm_mqtt_down[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_ORANGE, 1400, RGB_STEP_FADE},
+    {RGB_OFF, 1200, RGB_STEP_FADE},
+    {RGB_BLUE, 100, RGB_STEP_SOLID},
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+};
+
+/* WiFi异常MQTT异常 → 加红灯闪烁 */
+static const rgb_step_t seq_light_comm_both_down[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_ORANGE, 1400, RGB_STEP_FADE},
+    {RGB_OFF, 1200, RGB_STEP_FADE},
+    {RGB_RED, 100, RGB_STEP_SOLID},
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+};
+
+/* ==================== 温度越界（紫色呼吸） ==================== */
+
+/* 无通讯指示 */
+static const rgb_step_t seq_temp_alarm[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_PURPLE, 1400, RGB_STEP_FADE},
+    {RGB_OFF, 1400, RGB_STEP_FADE},
+};
+
+/* WiFi+MQTT正常 → 加绿灯闪烁 */
+static const rgb_step_t seq_temp_comm_ok[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_PURPLE, 1400, RGB_STEP_FADE},
+    {RGB_OFF, 1200, RGB_STEP_FADE},
+    {RGB_GREEN, 100, RGB_STEP_SOLID},
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+};
+
+/* WiFi正常MQTT异常 → 加蓝灯闪烁 */
+static const rgb_step_t seq_temp_comm_mqtt_down[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_PURPLE, 1400, RGB_STEP_FADE},
+    {RGB_OFF, 1200, RGB_STEP_FADE},
+    {RGB_BLUE, 100, RGB_STEP_SOLID},
+    {RGB_OFF, 100, RGB_STEP_SOLID},
+};
+
+/* WiFi异常MQTT异常 → 加红灯闪烁 */
+static const rgb_step_t seq_temp_comm_both_down[] = {
+    {RGB_OFF, 1, RGB_STEP_SOLID},
+    {RGB_PURPLE, 1400, RGB_STEP_FADE},
+    {RGB_OFF, 1200, RGB_STEP_FADE},
+    {RGB_RED, 100, RGB_STEP_SOLID},
+    {RGB_OFF, 100, RGB_STEP_SOLID},
 };
 
 /**
@@ -203,60 +315,124 @@ void rgb_boot_flash(void)
 
 /**
  * @brief       根据设备状态自动选择模式并更新 RGB
- * @param       无
+ * @param       wifi_status: 当前 WiFi 状态（由调用者传入缓存值）
  * @retval      无
- * @note        在 loop() 中调用，优先级从高到低：
- *              1. 严重报警（LED灯+风扇同时启动）→ 紫橙闪烁
- *              2. 光照越界报警（LED灯亮）        → 橙色呼吸
- *              3. 温度越界报警（风扇启动）        → 紫色呼吸
- *              4. WiFi未连接                     → 红色呼吸
- *              5. MQTT未连接（WiFi已连接）        → 蓝色呼吸
- *              6. 所有状态正常                   → 绿色呼吸
+ * @note        优先级从高到低：
+ *              1. 严重报警（LED+风扇都开）       → 紫呼吸+橙呼吸循环
+ *                 - WiFi+MQTT正常  → 加绿灯闪烁
+ *                 - WiFi正常MQTT异常 → 加蓝灯闪烁
+ *                 - WiFi+MQTT异常  → 加红灯闪烁
+ *              2. 光照越界（LED开、风扇未开）    → 橙色呼吸
+ *                 - WiFi+MQTT正常  → 加绿灯闪烁
+ *                 - WiFi正常MQTT异常 → 加蓝灯闪烁
+ *                 - WiFi+MQTT异常  → 加红灯闪烁
+ *              3. 温度越界（风扇开、LED未亮）    → 紫色呼吸
+ *                 - WiFi+MQTT正常  → 加绿灯闪烁
+ *                 - WiFi正常MQTT异常 → 加蓝灯闪烁
+ *                 - WiFi+MQTT异常  → 加红灯闪烁
+ *              4. WiFi未连接（无报警）           → 红色呼吸
+ *              5. WiFi连但MQTT未连（无报警）     → 蓝色呼吸
+ *              6. 一切正常                       → 绿色呼吸
  */
 void rgb_update_by_state(wl_status_t wifi_status)
 {
+    unsigned long now = millis();
+    bool wifiOk = (wifi_status == WL_CONNECTED);
+    bool mqttOk = mqtt_is_connected();
+
+    /* ---- 辅助宏：运行序列，自动检测序列指针变化并重置状态 ---- */
+#define RUN_SEQ(seq) do { \
+    const rgb_step_t* _s = (seq); \
+    uint8_t _n = sizeof(seq) / sizeof(rgb_step_t); \
+    if (_s != active_seq) { \
+        seq_step_index = 0; \
+        seq_step_start = now; \
+        seq_fade_start_color = RGB_OFF; \
+        active_seq = _s; \
+    } \
+    run_sequence(now, _s, _n); \
+} while(0)
+
+    /* ==================== 报警状态（序列驱动） ==================== */
     if (lightEnabled && fanEnabled) {
-        /* 严重报警：紫橙闪烁 */
+        /* 1. 严重报警：紫呼吸+橙呼吸循环 + 通讯指示 */
         if (rgb_current_mode != RGB_MODE_ALARM_LED_FAN) {
             rgb_set_mode(RGB_MODE_ALARM_LED_FAN);
+            active_seq = NULL;
         }
-        run_sequence(millis(), seq_alarm_flash, sizeof(seq_alarm_flash) / sizeof(rgb_step_t));
-    } else if (lightEnabled) {
-        /* 光照越界：橙色呼吸 */
-        if (rgb_current_mode != RGB_MODE_BREATH || rgb_current_color != RGB_ORANGE) {
-            rgb_set_mode(RGB_MODE_BREATH);
-            rgb_set_color(RGB_ORANGE);
+        if (wifiOk && mqttOk) {
+            RUN_SEQ(seq_critical_comm_ok);
+        } else if (wifiOk && !mqttOk) {
+            RUN_SEQ(seq_critical_comm_mqtt_down);
+        } else if (!wifiOk && !mqttOk) {
+            RUN_SEQ(seq_critical_comm_both_down);
+        } else {
+            RUN_SEQ(seq_critical_alarm);
         }
-        rgb_update();
-    } else if (fanEnabled) {
-        /* 温度越界：紫色呼吸 */
-        if (rgb_current_mode != RGB_MODE_BREATH || rgb_current_color != RGB_PURPLE) {
-            rgb_set_mode(RGB_MODE_BREATH);
-            rgb_set_color(RGB_PURPLE);
+        return;
+    }
+
+    if (lightEnabled) {
+        /* 2. 光照越界：橙色呼吸 + 通讯指示 */
+        if (rgb_current_mode != RGB_MODE_ALARM_LIGHT) {
+            rgb_set_mode(RGB_MODE_ALARM_LIGHT);
+            active_seq = NULL;
         }
-        rgb_update();
-    } else if (wifi_status != WL_CONNECTED) {
-        /* WiFi断开：红色呼吸 */
+        if (wifiOk && mqttOk) {
+            RUN_SEQ(seq_light_comm_ok);
+        } else if (wifiOk && !mqttOk) {
+            RUN_SEQ(seq_light_comm_mqtt_down);
+        } else if (!wifiOk && !mqttOk) {
+            RUN_SEQ(seq_light_comm_both_down);
+        } else {
+            RUN_SEQ(seq_light_alarm);
+        }
+        return;
+    }
+
+    if (fanEnabled) {
+        /* 3. 温度越界：紫色呼吸 + 通讯指示 */
+        if (rgb_current_mode != RGB_MODE_ALARM_TEMP) {
+            rgb_set_mode(RGB_MODE_ALARM_TEMP);
+            active_seq = NULL;
+        }
+        if (wifiOk && mqttOk) {
+            RUN_SEQ(seq_temp_comm_ok);
+        } else if (wifiOk && !mqttOk) {
+            RUN_SEQ(seq_temp_comm_mqtt_down);
+        } else if (!wifiOk && !mqttOk) {
+            RUN_SEQ(seq_temp_comm_both_down);
+        } else {
+            RUN_SEQ(seq_temp_alarm);
+        }
+        return;
+    }
+
+    /* ==================== 非报警状态（呼吸灯驱动） ==================== */
+    if (!wifiOk) {
+        /* 4. WiFi断开（无报警）：红色呼吸 */
         if (rgb_current_mode != RGB_MODE_BREATH || rgb_current_color != RGB_RED) {
             rgb_set_mode(RGB_MODE_BREATH);
             rgb_set_color(RGB_RED);
         }
         rgb_update();
-    } else if (!mqtt_is_connected()) {
-        /* MQTT断开：蓝色呼吸 */
+    } else if (!mqttOk) {
+        /* 5. WiFi连但MQTT未连（无报警）：蓝色呼吸 */
         if (rgb_current_mode != RGB_MODE_BREATH || rgb_current_color != RGB_BLUE) {
             rgb_set_mode(RGB_MODE_BREATH);
             rgb_set_color(RGB_BLUE);
         }
         rgb_update();
     } else {
-        /* 一切正常：绿色呼吸 */
+        /* 6. 一切正常：绿色呼吸 */
         if (rgb_current_mode != RGB_MODE_BREATH || rgb_current_color != RGB_GREEN) {
             rgb_set_mode(RGB_MODE_BREATH);
             rgb_set_color(RGB_GREEN);
         }
         rgb_update();
     }
+
+#undef RUN_SEQ
 }
 
 /**
@@ -334,4 +510,40 @@ void rgb_breath(uint32_t color, uint8_t brightness)
         ));
         pixels.show();
     }
+}
+
+/**
+ * @brief       后台 RGB 灯控任务
+ * @param       pvParameters: 未使用
+ * @retval      无
+ * @note        每 ~30ms 更新一次 RGB 状态，实现平滑呼吸/闪烁效果。
+ *              读取外部全局变量（lightEnabled、fanEnabled）和 WiFi/MQTT 状态，
+ *              自动选择合适的灯效。
+ */
+static void rgb_task(void *pvParameters)
+{
+    while (1) {
+        wl_status_t wifiStatus = WiFi.status();
+        rgb_update_by_state(wifiStatus);
+        vTaskDelay(pdMS_TO_TICKS(30));  /* ~33fps，呼吸足够平滑 */
+    }
+}
+
+/**
+ * @brief       创建 RGB 灯控后台任务
+ * @param       无
+ * @retval      无
+ * @note        在 setup() 中调用一次
+ */
+void rgb_task_create(void)
+{
+    xTaskCreate(
+        rgb_task,           /* 任务函数 */
+        "rgbTask",          /* 任务名称 */
+        4096,               /* 栈大小（字节） */
+        NULL,               /* 参数 */
+        2,                  /* 优先级（略高于温度任务，保证呼吸平滑） */
+        NULL                /* 任务句柄（不需要） */
+    );
+    Serial.println("[RGB] 后台呼吸灯任务已创建");
 }
